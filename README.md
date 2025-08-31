@@ -7,6 +7,13 @@ A comprehensive enterprise data platform built with Apache Spark and Scala, feat
 - **Data Ingestion**: Batch and streaming ingestion from multiple sources
 - **Data Normalization**: Automated data cleansing, validation, and transformation
 - **Analytics**: Advanced analytics, machine learning, and real-time processing
+- **API Services**: RESTful APIs for data access, metadata management, and monitoring
+- **Web UI**: Interactive dashboards, admin panels, and data exploration interfaces
+- **Workflow Orchestration**: Multiple orchestration engines (Airflow, Argo, Prefect)
+- **Infrastructure as Code**: Terraform and Kubernetes deployment automation
+- **Comprehensive Monitoring**: Full observability with metrics, logs, and tracing
+- **Testing Framework**: End-to-end, integration, performance, and data quality testing
+- **Development Tools**: CI/CD pipelines, code quality tools, and local development setup
 - **Modular Architecture**: Clean separation of concerns with reusable components
 - **Production Ready**: Enterprise-grade configurations and monitoring
 
@@ -20,21 +27,66 @@ smartstar/
 │   │   ├── ingestion/             # Data ingestion jobs
 │   │   ├── normalization/         # Data cleansing and transformation
 │   │   └── analytics/             # Analytics and ML workloads
-│   └── scripts/                   # Build and deployment scripts
-├── config/                        # Environment-specific configurations
-├── infrastructure/                # Infrastructure as Code (Terraform, K8s)
-├── data-pipelines/               # Workflow orchestration (Airflow)
-├── monitoring/                   # Observability stack (Prometheus, Grafana)
-└── docs/                         # Documentation
+│   ├── scripts/                   # Build and deployment scripts
+│   ├── config/                    # Spark app configurations
+│   │   ├── environments/          # Environment-specific configs
+│   │   └── modules/               # Module-specific configs
+│   └── docker/                    # Docker development environment
+├── api-services/                  # REST APIs and microservices
+│   ├── data-api/                  # Data access and query API
+│   ├── metadata-api/              # Data catalog and metadata service
+│   └── monitoring-api/            # Monitoring and metrics API
+├── web-ui/                        # Web-based user interfaces
+│   ├── admin-panel/               # Administrative interface
+│   ├── dashboard/                 # Analytics and monitoring dashboard
+│   └── data-explorer/             # Interactive data exploration UI
+├── data-pipelines/                # Workflow orchestration
+│   ├── airflow/                   # Apache Airflow DAGs and configs
+│   ├── argo-workflows/            # Kubernetes-native workflows
+│   └── prefect/                   # Modern workflow orchestration
+├── infrastructure/                # Infrastructure as Code
+│   ├── terraform/                 # Terraform modules and environments
+│   ├── kubernetes/                # K8s manifests, Helm charts, operators
+│   └── docker/                    # Container configurations
+├── monitoring/                    # Observability stack
+│   ├── prometheus/                # Metrics collection and alerting
+│   ├── grafana/                   # Dashboards and visualization
+│   ├── jaeger/                    # Distributed tracing
+│   └── elasticsearch/             # Log aggregation and search
+├── tests/                         # Testing infrastructure
+│   ├── e2e/                       # End-to-end tests
+│   ├── integration/               # Integration tests
+│   ├── performance/               # Performance and load tests
+│   └── data-quality/              # Data quality validation tests
+├── tools/                         # Development and operational tools
+│   ├── ci-cd/                     # CI/CD pipeline configurations
+│   ├── code-quality/              # Linting, formatting, analysis tools
+│   └── local-dev/                 # Local development environment setup
+├── scripts/                       # Utility and automation scripts
+│   ├── setup/                     # Environment setup scripts
+│   ├── deployment/                # Deployment automation
+│   └── utilities/                 # General utility scripts
+└── docs/                          # Documentation
+    ├── architecture/              # System design and architecture docs
+    ├── api/                       # API documentation
+    ├── deployment/                # Deployment guides
+    └── user-guides/               # User manuals and tutorials
 ```
 
 ## 🛠️ Prerequisites
 
+### Core Requirements
 - **Java**: 8 or 11
 - **Scala**: 2.13.x
 - **SBT**: 1.9.x
 - **Apache Spark**: 3.5.x
-- **Docker** (optional, for local development)
+
+### Optional Components
+- **Docker** & **Docker Compose**: For containerized development
+- **Kubernetes**: For orchestration and deployment
+- **Terraform**: For infrastructure provisioning
+- **Node.js**: For web UI development
+- **Python**: For certain data pipeline components
 
 ## 🚀 Quick Start
 
@@ -61,7 +113,7 @@ cd spark-apps
 ### 3. Start Local Development Environment (Optional)
 
 ```bash
-cd spark-apps/docker
+cd infrastructure/docker
 docker-compose up -d
 ```
 
@@ -134,16 +186,84 @@ sbt "project ingestion" assembly
 - `ModelTrainingJob`: Machine learning model training
 - `RealTimeAnalyticsJob`: Streaming analytics and alerting
 
+## 🌐 API Services
+
+The platform provides RESTful APIs for programmatic access:
+
+### Data API (`api-services/data-api/`)
+- Query and retrieve processed data
+- Real-time data access endpoints
+- Data export functionality
+
+### Metadata API (`api-services/metadata-api/`)
+- Data catalog and schema registry
+- Lineage tracking and data discovery
+- Dataset metadata management
+
+### Monitoring API (`api-services/monitoring-api/`)
+- System health and performance metrics
+- Job status and execution monitoring
+- Alert management and notifications
+
+## 💻 Web User Interface
+
+Interactive web interfaces for platform management:
+
+### Admin Panel (`web-ui/admin-panel/`)
+- User and permission management
+- System configuration and settings
+- Resource monitoring and allocation
+
+### Analytics Dashboard (`web-ui/dashboard/`)
+- Real-time metrics and KPIs
+- Custom visualization and reporting
+- Data pipeline monitoring
+
+### Data Explorer (`web-ui/data-explorer/`)
+- Interactive data browsing and querying
+- Schema exploration and profiling
+- Ad-hoc analysis and visualization
+
+## 🔄 Workflow Orchestration
+
+Multiple orchestration engines supported:
+
+### Apache Airflow (`data-pipelines/airflow/`)
+```bash
+cd data-pipelines/airflow
+# Start Airflow webserver and scheduler
+docker-compose up -d
+```
+
+### Argo Workflows (`data-pipelines/argo-workflows/`)
+```bash
+# Deploy workflows to Kubernetes
+kubectl apply -f data-pipelines/argo-workflows/
+```
+
+### Prefect (`data-pipelines/prefect/`)
+```bash
+cd data-pipelines/prefect
+# Start Prefect server
+prefect server start
+```
+
 ## ⚙️ Configuration
 
 ### Environment-Specific Configs
 
 ```bash
-config/
+spark-apps/config/
 ├── environments/
-│   ├── development/application.conf
-│   ├── staging/application.conf
-│   └── production/application.conf
+│   ├── development.conf
+│   ├── test.conf
+│   ├── staging.conf
+│   └── production.conf
+├── modules/
+│   ├── analytics.conf
+│   ├── ingestion.conf
+│   └── normalization.conf
+└── common.conf
 ```
 
 ### Application Configuration
@@ -177,8 +297,31 @@ database {
 
 ```bash
 # Build and run locally
+cd spark-apps
 ./scripts/build.sh
 ./scripts/run-job.sh [module] [job-class] [args...]
+```
+
+### Infrastructure Deployment
+
+#### Using Terraform
+```bash
+cd infrastructure/terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+#### Using Kubernetes
+```bash
+cd infrastructure/kubernetes
+kubectl apply -f manifests/
+```
+
+#### Using Helm Charts
+```bash
+cd infrastructure/kubernetes/helm-charts
+helm install smartstar ./smartstar-chart
 ```
 
 ### Cluster Deployment
@@ -196,45 +339,91 @@ spark-submit \
 ### Docker Deployment
 
 ```bash
-cd spark-apps/docker
+cd infrastructure/docker
 docker-compose up -d
+```
+
+### Environment Setup
+
+```bash
+# Initial environment setup
+./scripts/setup-v2.sh
+
+# Or use the setup directory
+cd scripts/setup
+./bootstrap.sh
 ```
 
 ## 📈 Monitoring
 
 The project includes comprehensive monitoring setup:
 
-- **Metrics**: Prometheus + Grafana dashboards
-- **Logging**: Centralized logging with ELK stack
-- **Tracing**: Distributed tracing with Jaeger
+- **Metrics**: Prometheus + Grafana dashboards (`monitoring/prometheus/`, `monitoring/grafana/`)
+- **Logging**: Centralized logging with ELK stack (`monitoring/elasticsearch/`)
+- **Tracing**: Distributed tracing with Jaeger (`monitoring/jaeger/`)
 - **Alerting**: Custom alerts for job failures and performance issues
+
+### Starting the Monitoring Stack
+
+```bash
+cd monitoring
+docker-compose up -d
+```
+
+Access points:
+- Grafana: http://localhost:3000
+- Prometheus: http://localhost:9090
+- Jaeger UI: http://localhost:16686
 
 ## 🧪 Testing
 
 ### Unit Tests
 
 ```bash
+cd spark-apps
 sbt test
 ```
 
 ### Integration Tests
 
 ```bash
+cd spark-apps
 sbt "testOnly *IntegrationTest"
 ```
 
-### End-to-End Tests
+### Test Infrastructure
 
-```bash
-cd tests/e2e
-./run-e2e-tests.sh
-```
+The project includes comprehensive testing framework structure:
+
+- `tests/e2e/`: End-to-end testing infrastructure
+- `tests/integration/`: Integration test suites
+- `tests/performance/`: Performance and load testing
+- `tests/data-quality/`: Data quality validation tests
+
+*Note: Test implementations are currently being developed in their respective directories.*
+
+## 🛠️ Development Tools
+
+### CI/CD Pipelines (`tools/ci-cd/`)
+- GitHub Actions workflows
+- GitLab CI configurations  
+- Jenkins pipeline scripts
+
+### Code Quality (`tools/code-quality/`)
+- Linting and formatting configurations
+- Static analysis tools
+- Code coverage reporting
+
+### Local Development (`tools/local-dev/`)
+- Development environment setup
+- IDE configurations
+- Testing utilities
 
 ## 📚 Documentation
 
 Detailed documentation available in the `docs/` directory:
 
-- [Architecture Overview](docs/architecture/system-architecture.md)
+- [Architecture Overview](docs/architecture/)
 - [API Documentation](docs/api/)
 - [Deployment Guide](docs/deployment/)
 - [User Guides](docs/user-guides/)
@@ -250,7 +439,7 @@ Detailed documentation available in the `docs/` directory:
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
 ## 🆘 Support
 
