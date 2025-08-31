@@ -1,0 +1,19 @@
+FROM apache/spark:3.5.0-scala2.13-java11-python3-ubuntu
+
+# Set working directory
+WORKDIR /opt/spark/work-dir
+
+# Copy application JARs
+COPY target/scala-2.13/*.jar /opt/spark/jars/
+
+# Copy configuration files
+COPY modules/*/src/main/resources/*.conf /opt/spark/conf/
+
+# Set permissions
+USER root
+RUN chmod -R 777 /opt/spark/work-dir
+
+USER ${spark_uid}
+
+# Default command
+CMD ["/opt/spark/bin/spark-submit", "--help"]
