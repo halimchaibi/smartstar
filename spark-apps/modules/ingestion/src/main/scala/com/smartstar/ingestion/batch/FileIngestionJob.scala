@@ -1,11 +1,10 @@
 package com.smartstar.ingestion.batch
 
-import com.smartstar.common.traits.{SparkJob, ConfigurableJob}
 import com.smartstar.common.config.AppConfig
 import com.smartstar.common.models.{JobResult, JobStatus}
+import com.smartstar.common.traits.{ConfigurableJob, SparkJob}
 import com.smartstar.common.utils.DateTimeUtils
 import org.apache.spark.sql.{DataFrame, SaveMode}
-import java.sql.Timestamp
 
 class FileIngestionJob extends SparkJob with ConfigurableJob {
   
@@ -57,8 +56,7 @@ class FileIngestionJob extends SparkJob with ConfigurableJob {
           endTime = Some(endTime),
           errorMessage = Some(ex.getMessage)
         )
-        
-        logError(s"Failed to execute $appName", ex)
+        logError(s"${result.status}: Failed to execute ${result.jobName}", ex)
         throw ex
     }
   }
@@ -67,7 +65,7 @@ class FileIngestionJob extends SparkJob with ConfigurableJob {
     logInfo(s"Reading data from $inputPath in $format format")
     
     format.toLowerCase match {
-      case "csv" => 
+      case "csv" =>
         spark.read
           .option("header", "true")
           .option("inferSchema", "true")

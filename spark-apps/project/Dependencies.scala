@@ -4,7 +4,7 @@ object Dependencies {
   
   object Versions {
     val spark = "3.5.0"
-    val scala = "2.13.11"
+    val scala = "2.13.16"
     val scalaTest = "3.2.16"
     val typesafeConfig = "1.4.2"
     val slf4j = "2.0.7"

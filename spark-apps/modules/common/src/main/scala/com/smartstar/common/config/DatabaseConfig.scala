@@ -2,20 +2,32 @@ package com.smartstar.common.config
 
 import com.typesafe.config.Config
 
+import scala.concurrent.duration.Duration
+
 case class DatabaseConfig(
-  url: String,
-  username: String,
-  password: String,
-  driver: String,
-  connectionPoolSize: Int
-)
+                           driver: String,
+                           host: String,
+                           port: Int,
+                           name: String,
+                           username: String,
+                           password: String,
+                           ssl: Boolean,
+                           connectionPoolSize: Int,
+                           connectionTimeout: Duration
+                         )
 
 object DatabaseConfig {
-  def load(config: Config): DatabaseConfig = DatabaseConfig(
-    url = config.getString("url"),
-    username = config.getString("username"),
-    password = config.getString("password"),
-    driver = config.getString("driver"),
-    connectionPoolSize = config.getInt("connection-pool-size")
-  )
+  def load(rawConfig: Config): DatabaseConfig = {
+    DatabaseConfig(
+      driver = rawConfig.getString("database.driver"),
+      host = rawConfig.getString("database.host"),
+      port = rawConfig.getInt("database.port"),
+      name = rawConfig.getString("database.name"),
+      username = rawConfig.getString("database.username"),
+      password = rawConfig.getString("database.password"),
+      ssl = rawConfig.getBoolean("database.ssl"),
+      connectionPoolSize = rawConfig.getInt("database.connection-pool-size"),
+      connectionTimeout = Duration.fromNanos(rawConfig.getDuration("database.connection-timeout").toNanos)
+    )
+  }
 }
