@@ -1,7 +1,7 @@
 package com.smartstar.normalization.cleaning
 
 import com.smartstar.common.traits.{SparkJob, ConfigurableJob}
-import com.smartstar.common.config.AppConfig
+import com.smartstar.common.config.{AppConfig, ConfigurationFactory}
 import com.smartstar.common.constants.ColumnConstants
 import org.apache.spark.sql.{DataFrame, SaveMode}
 import org.apache.spark.sql.functions._
@@ -9,7 +9,7 @@ import org.apache.spark.sql.functions._
 class DataCleansingJob extends SparkJob with ConfigurableJob {
   
   override def appName: String = "SmartStar-Data-Cleansing"
-  override def config: AppConfig = AppConfig.load()
+  override def config: AppConfig = ConfigurationFactory.forModule("normalization")
   
   override def run(args: Array[String]): Unit = {
     validateConfig()

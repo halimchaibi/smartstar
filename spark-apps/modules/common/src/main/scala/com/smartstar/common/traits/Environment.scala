@@ -2,9 +2,11 @@ package com.smartstar.common.config
 
 sealed trait Environment {
   def name: String
+  def configPath: String = s"environments/$name.conf"
   def isProduction: Boolean = false
   def isDevelopment: Boolean = false
   def isStaging: Boolean = false
+  def isTest: Boolean = false
 }
 
 object Environment {
@@ -25,20 +27,43 @@ object Environment {
   
   case object Test extends Environment {
     override def name: String = "test"
+    override def isTest: Boolean = true
   }
   
+  /**
+   * Parse environment from string
+   */
   def fromString(env: String): Environment = env.toLowerCase match {
     case "development" | "dev" | "local" => Development
     case "staging" | "stage" => Staging
     case "production" | "prod" => Production
     case "test" => Test
-    case _ => Development // Default fallback
+    case _ => throw new IllegalArgumentException(s"Unknown environment: $env")
   }
   
-  def current: Environment = {
-    val envVar = sys.env.getOrElse("SPARK_ENV", 
-                 sys.env.getOrElse("ENVIRONMENT", 
-                 sys.props.getOrElse("environment", "development")))
-    fromString(envVar)
+  /**
+   * Detect environment from system properties and environment variables
+   */
+  def detect(): Environment = {
+    val envString = Option(System.getProperty("environment"))
+      .orElse(Option(System.getProperty("spark.env")))
+      .orElse(Option(System.getenv("ENVIRONMENT")))
+      .orElse(Option(System.getenv("ENV")))
+      .orElse(Option(System.getenv("SPARK_ENV")))
+      .getOrElse("development")
+    
+    try {
+      fromString(envString)
+    } catch {
+      case _: IllegalArgumentException => Development // Fallback to development for invalid values
+    }
   }
+  
+  /**
+   * Get current environment (deprecated, use detect() instead)
+   */
+  @deprecated("Use detect() instead", "1.0.0")
+  def current: Environment = detect()
+  
+  val all: List[Environment] = List(Development, Staging, Production, Test)
 }

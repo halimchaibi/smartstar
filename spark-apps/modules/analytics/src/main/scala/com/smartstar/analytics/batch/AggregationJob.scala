@@ -1,14 +1,14 @@
 package com.smartstar.analytics.batch
 
 import com.smartstar.common.traits.{SparkJob, ConfigurableJob}
-import com.smartstar.common.config.AppConfig
+import com.smartstar.common.config.{AppConfig, ConfigurationFactory}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 import org.apache.spark.sql.functions._
 
 class AggregationJob extends SparkJob with ConfigurableJob {
   
   override def appName: String = "SmartStar-Aggregation"
-  override def config: AppConfig = AppConfig.load()
+  override def config: AppConfig = ConfigurationFactory.forModule("analytics")
   
   override def run(args: Array[String]): Unit = {
     validateConfig()

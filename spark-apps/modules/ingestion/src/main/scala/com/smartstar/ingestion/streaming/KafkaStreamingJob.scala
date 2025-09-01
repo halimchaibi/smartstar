@@ -1,6 +1,6 @@
 package com.smartstar.ingestion.streaming
 
-import com.smartstar.common.config.{AppConfig, Environment}
+import com.smartstar.common.config.{AppConfig, ConfigurationFactory, Environment}
 import com.smartstar.common.traits.{ConfigurableJob, EnvironmentAwareSparkJob}
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
@@ -9,7 +9,7 @@ import org.apache.spark.sql.functions._
 class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob  {
   
   override def appName: String = "SmartStar-Kafka-Streaming"
-  override def config: AppConfig = AppConfig.load()
+  override def config: AppConfig = ConfigurationFactory.forModule("ingestion")
 
   private val checkpointLocation: String = s"/tmp/checkpoints/${environment.name}/$appName"
 

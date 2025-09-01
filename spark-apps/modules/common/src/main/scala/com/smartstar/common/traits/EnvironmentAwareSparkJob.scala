@@ -11,7 +11,7 @@ trait EnvironmentAwareSparkJob extends LoggingUtils {
   def config: AppConfig
   
   // Allow jobs to override environment (useful for testing)
-  def environment: Environment = Environment.current
+  def environment: Environment = Environment.detect()
   
   // Allow jobs to provide additional configurations
   def additionalSparkConfigs: Map[String, String] = Map.empty
