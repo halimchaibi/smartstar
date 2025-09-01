@@ -8,7 +8,7 @@ val sparkVersion = "4.0.0"
 ThisBuild / scalacOptions ++= Seq(
   "-encoding", "UTF-8",
   "-deprecation",
-  "-unchecked", 
+  "-unchecked",
   "-feature",
   "-Xlint",
   "-Ywarn-dead-code",
@@ -24,12 +24,16 @@ ThisBuild / assemblyMergeStrategy := {
     MergeStrategy.concat
     
   // Rest of your merge strategy...
-  case PathList("META-INF", xs @ _*) => xs match {
+  case PathList("META-INF", xs @_*) => xs match {
     case "MANIFEST.MF" :: Nil => MergeStrategy.discard
     case "services" :: xs => MergeStrategy.concat
     case _ => MergeStrategy.discard
   }
   case x => MergeStrategy.first
+
+//  case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+//  case PathList("META-INF", "services", xs*) => MergeStrategy.concat
+//  case PathList("META-INF", xs*) => MergeStrategy.discard
 }
 
 lazy val assemblySettings = Seq(
@@ -83,15 +87,15 @@ lazy val commonDependencies = Seq(
   "org.apache.spark" %% "spark-connect-client-jvm" % sparkVersion,
   
   // Configuration
-  "com.typesafe" % "config" % "1.4.2",
+  "com.typesafe" % "config" % "1.4.4",
   
   // Logging
-  "org.slf4j" % "slf4j-api" % "2.0.7",
-  "ch.qos.logback" % "logback-classic" % "1.4.8",
+  "org.slf4j" % "slf4j-api" % "2.0.17",
+  "ch.qos.logback" % "logback-classic" % "1.5.18",
   
   // Testing
-  "org.scalatest" %% "scalatest" % "3.2.16" % Test,
-  "org.scalamock" %% "scalamock" % "5.2.0" % Test
+  "org.scalatest" %% "scalatest" % "3.2.19" % Test,
+  "org.scalamock" %% "scalamock" % "7.4.1" % Test
 )
 
 // Common module
@@ -110,7 +114,7 @@ lazy val ingestion = (project in file("modules/ingestion"))
     libraryDependencies ++= commonDependencies ++ Seq(
       "org.apache.spark" %% "spark-sql" % sparkVersion % Provided,
       "org.apache.spark" %% "spark-connect-client-jvm" % sparkVersion,
-      "io.grpc" % "grpc-netty-shaded" % "1.63.0"  // transport provider
+      "io.grpc" % "grpc-netty-shaded" % "1.75.0"  // transport provider
     ),
     assemblySettings
   )
@@ -122,7 +126,7 @@ lazy val normalization = (project in file("modules/normalization"))
     name := "smartstar-normalization",
     libraryDependencies ++= commonDependencies ++ Seq(
       "io.delta" %% "delta-core" % "2.4.0",
-      "org.apache.spark" %% "spark-avro" % "3.5.0" % "provided"
+      "org.apache.spark" %% "spark-avro" % "4.0.0" % "provided"
     ),
     assemblySettings
   )
@@ -133,7 +137,7 @@ lazy val analytics = (project in file("modules/analytics"))
   .settings(
     name := "smartstar-analytics",
     libraryDependencies ++= commonDependencies ++ Seq(
-      "org.apache.spark" %% "spark-mllib" % "3.5.0" % "provided",
+      "org.apache.spark" %% "spark-mllib" % "4.0.0" % "provided",
       "com.github.fommil.netlib" % "all" % "1.1.2"
     ),
     assemblySettings
