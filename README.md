@@ -250,46 +250,98 @@ prefect server start
 
 ## ⚙️ Configuration
 
-### Environment-Specific Configs
+SmartStar uses a **hierarchical configuration system** that provides consistent, environment-aware configuration management across all modules.
+
+### Configuration Hierarchy
+
+Configuration is loaded in the following order (later overrides earlier):
+
+1. **Base Configuration**: `modules/common/src/main/resources/application.conf`
+2. **Common Settings**: `config/common.conf`
+3. **Environment-Specific**: `config/environments/{environment}.conf`
+4. **Module-Specific**: `config/modules/{module}.conf`
+5. **Environment Variables**: Runtime overrides
+
+### Directory Structure
 
 ```bash
 spark-apps/config/
+├── common.conf                    # Shared configuration across all modules
 ├── environments/
-│   ├── development.conf
-│   ├── test.conf
-│   ├── staging.conf
-│   └── production.conf
-├── modules/
-│   ├── analytics.conf
-│   ├── ingestion.conf
-│   └── normalization.conf
-└── common.conf
+│   ├── development.conf          # Development environment settings
+│   ├── test.conf                 # Test environment settings
+│   ├── staging.conf              # Staging environment settings
+│   └── production.conf           # Production environment settings
+└── modules/
+    ├── analytics.conf            # Analytics module specific settings
+    ├── ingestion.conf            # Ingestion module specific settings
+    └── normalization.conf        # Normalization module specific settings
 ```
 
-### Application Configuration
+### Environment Detection
 
-Main configuration in `spark-apps/modules/common/src/main/resources/application.conf`:
+The system automatically detects the environment from:
+1. System property: `-Denvironment=production`
+2. Environment variables: `ENVIRONMENT`, `ENV`, `SPARK_ENV`
+3. Default: `development`
 
+### Usage in Applications
+
+```scala
+import com.smartstar.common.config.ConfigurationFactory
+
+// Recommended: Module-specific configuration
+class MyIngestionJob extends SparkJob with ConfigurableJob {
+  override def config: AppConfig = ConfigurationFactory.forModule("ingestion")
+}
+
+// Alternative: Explicit environment
+val config = ConfigurationFactory.forEnvironment(Environment.Production)
+
+// For testing
+val testConfig = ConfigurationFactory.forTesting("my-test")
+```
+
+### Configuration Validation
+
+Validate all configurations:
+
+```bash
+cd spark-apps
+sbt "runMain com.smartstar.tools.ConfigurationValidator"
+```
+
+### Environment-Specific Examples
+
+**Development**:
 ```hocon
-app {
-  name = "smartstar-spark-app"
-  version = "1.0.0"
-}
-
-spark {
-  master = "local[*]"
-  executor {
-    memory = "2g" 
-    cores = 2
-  }
-}
-
-database {
-  url = "jdbc:postgresql://localhost:5432/smartstar"
-  username = "smartstar_user"
-  password = "smartstar_password"
-}
+spark.master = "local[*]"
+database.host = "localhost"
+storage.base-path = "/tmp/smartstar/dev"
 ```
+
+**Production**:
+```hocon
+spark.master = "yarn"
+database.host = "prod-postgres-cluster.internal"
+storage.base-path = "s3a://smartstar-prod-bucket/data"
+```
+
+### Module-Specific Examples
+
+**Ingestion**:
+```hocon
+kafka.topics.raw-data = "smartstar-raw-data"
+data-quality.fail-on-error = true
+```
+
+**Analytics**:
+```hocon
+spark.sql.shuffle-partitions = 400
+ml.feature-store.enabled = true
+```
+
+For detailed configuration documentation, see: [Configuration System Guide](docs/configuration-system.md)
 
 ## 🚀 Deployment
 
