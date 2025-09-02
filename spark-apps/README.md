@@ -22,3 +22,8 @@ sbt "ingestionApp/run"
 sbt "normalizationApp/run" 
 sbt "analyticsApp/run"
 ```
+
+# Run
+```bash
+export ENV = "dev"
+export MODULE_NAME = "development"

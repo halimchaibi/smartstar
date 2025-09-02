@@ -23,7 +23,7 @@ docker exec $CONTAINER_NAME /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server $BOOTSTRAP_SERVER \
   --create \
   --topic _connect-offsets \
-  --partitions 25 \
+  --partitions 10 \
   --replication-factor 1 \
   --config cleanup.policy=compact \
   --if-not-exists
