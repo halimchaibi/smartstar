@@ -9,13 +9,10 @@ object AppConstants {
   val JSON_FORMAT = "json"
   val CSV_FORMAT = "csv"
   val AVRO_FORMAT = "avro"
-  val DELTA_FORMAT = "delta"
+  val DELTA_FORMAT = "iceberg"
   
   // Database drivers
   val POSTGRESQL_DRIVER = "org.postgresql.Driver"
-  val MYSQL_DRIVER = "com.mysql.cj.jdbc.Driver"
-  val ORACLE_DRIVER = "oracle.jdbc.driver.OracleDriver"
-  val SQLSERVER_DRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
   
   // Kafka topics
   val DEFAULT_KAFKA_TOPIC = "smartstar-events"

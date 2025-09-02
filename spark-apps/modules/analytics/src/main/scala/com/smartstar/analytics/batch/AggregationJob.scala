@@ -1,14 +1,15 @@
 package com.smartstar.analytics.batch
 
-import com.smartstar.common.traits.{SparkJob, ConfigurableJob}
+import com.smartstar.common.traits.{ConfigurableJob, Environment, EnvironmentAwareSparkJob, Module}
 import com.smartstar.common.config.{AppConfig, ConfigurationFactory}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 import org.apache.spark.sql.functions._
 
-class AggregationJob extends SparkJob with ConfigurableJob {
+class AggregationJob extends EnvironmentAwareSparkJob with ConfigurableJob {
   
   override def appName: String = "SmartStar-Aggregation"
-  override def config: AppConfig = ConfigurationFactory.forModule("analytics")
+  override def config: AppConfig =
+    ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Ingestion)
   
   override def run(args: Array[String]): Unit = {
     validateConfig()
@@ -63,6 +64,7 @@ class AggregationJob extends SparkJob with ConfigurableJob {
       .partitionBy("aggregation_type")
       .parquet(s"$outputPath/$aggregationType")
   }
+
 }
 
 object AggregationJob {

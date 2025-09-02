@@ -1,46 +1,36 @@
 package com.smartstar.common.config
-import com.typesafe.config.{Config, ConfigFactory}
+import com.smartstar.common.traits.{Environment, Module}
 import com.smartstar.common.utils.LoggingUtils
+import com.typesafe.config.{Config, ConfigFactory}
 
 import scala.util.{Failure, Success, Try}
 
 case class AppConfig(
-                      appName: String,
-                      version: String,
-                      environment: Environment,
-                      module: Option[String],
-                      sparkConfig: SparkSessionConfig,
-                      databaseConfig: DatabaseConfig,
-                      kafkaConfig: KafkaConfig,
-                      storageConfig: StorageConfig,
-                      monitoringConfig: MonitoringConfig,
-                      dataQualityConfig: DataQualityConfig,
-                      rawConfig: Config  // ← This holds the complete resolved configuration
-                    )
+    appName: String,
+    version: String,
+    environment: Environment,
+    module: Module,
+    sparkConfig: SparkSessionConfig,
+    rawConfig: Config
+)
 
 object AppConfig extends LoggingUtils {
 
   def load(): AppConfig = {
     val environment = Environment.detect()
-    val module = detectModule()
+    val module = Module.detect().get
+
     loadForEnvironmentAndModule(environment, module)
   }
 
-  def loadForEnvironment(environment: Environment): AppConfig = {
-    loadForEnvironmentAndModule(environment, None)
-  }
+  def loadForEnvironmentAndModule(environment: Environment, module: Module): AppConfig = {
+    logInfo(
+      s"Loading configuration for environment: ${environment.name}, module: ${module.name}"
+    )
 
-  def loadForModule(module: String): AppConfig = {
-    val environment = Environment.detect()
-    loadForEnvironmentAndModule(environment, Some(module))
-  }
-
-  def loadForEnvironmentAndModule(environment: Environment, module: Option[String]): AppConfig = {
-    logInfo(s"Loading configuration for environment: ${environment.name}, module: ${module.getOrElse("none")}")
-    
     // Set system properties for substitution in HOCON
     System.setProperty("environment", environment.name)
-    module.foreach(m => System.setProperty("MODULE_NAME", m))
+    System.setProperty("MODULE_NAME", module.name)
 
     // Load and resolve the complete configuration
     val rawConfig = loadCompleteConfig(environment, module)
@@ -49,7 +39,7 @@ object AppConfig extends LoggingUtils {
     fromConfig(rawConfig, environment, module)
   }
 
-  private def loadCompleteConfig(environment: Environment, module: Option[String]): Config = {
+  private def loadCompleteConfig(environment: Environment, module: Module): Config = {
     try {
       // Load configuration using Typesafe Config's standard loading mechanism
       // This automatically loads application.conf which includes all our config files
@@ -66,9 +56,9 @@ object AppConfig extends LoggingUtils {
         logInfo("Using fallback configuration...")
 
         // Fallback configuration
-        ConfigFactory.parseString(s"""
-          environment = "${environment.name}"
-          ${module.map(m => s"""module = "$m"""").getOrElse("")}
+        ConfigFactory
+          .parseString(s"""
+          environment = "$environment"
 
           app {
             name = "smartstar"
@@ -157,38 +147,30 @@ object AppConfig extends LoggingUtils {
             thresholds.completeness = 0.95
             thresholds.uniqueness = 0.98
           }
-        """).resolve()
+        """)
+          .resolve()
     }
   }
 
-  private def fromConfig(rawConfig: Config, environment: Environment, module: Option[String]): AppConfig = {
+  private def fromConfig(
+      rawConfig: Config,
+      environment: Environment,
+      module: Module
+  ): AppConfig = {
     // Validate configuration before creating AppConfig
     validate(rawConfig)
-    
+
     AppConfig(
       appName = rawConfig.getString("app.name"),
       version = rawConfig.getString("app.version"),
       environment = environment,
       module = module,
-
       sparkConfig = SparkSessionConfig.load(rawConfig, environment),
-      databaseConfig = DatabaseConfig.load(rawConfig),
-      kafkaConfig = KafkaConfig.load(rawConfig),
-      storageConfig = StorageConfig.load(rawConfig),
-      monitoringConfig = MonitoringConfig.load(rawConfig),
-      dataQualityConfig = DataQualityConfig.load(rawConfig),
-
-      rawConfig = rawConfig  // ← Store the complete resolved config
+      rawConfig = rawConfig
     )
   }
-
-  private def detectModule(): Option[String] = {
-    sys.env.get("MODULE_NAME")
-      .orElse(sys.props.get("MODULE_NAME"))
-  }
-
   // Utility methods
-  def validate(config: Config): Boolean = {
+  def validate(config: Config): Boolean =
     Try {
       val requiredPaths = Seq(
         "app.name",
@@ -212,5 +194,4 @@ object AppConfig extends LoggingUtils {
         logError(s"Configuration validation failed: ${ex.getMessage}", ex)
         false
     }
-  }
 }

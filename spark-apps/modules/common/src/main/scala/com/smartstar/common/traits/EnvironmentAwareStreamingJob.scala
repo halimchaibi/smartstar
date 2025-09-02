@@ -3,26 +3,27 @@ package com.smartstar.common.traits
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.streaming.StreamingQuery
-import com.smartstar.common.config.{Environment, SparkSessionConfig}
+import com.smartstar.common.config.SparkSessionConfig
+import com.smartstar.common.traits.Environment
 import com.smartstar.common.session.EnvironmentSparkSessionFactory
 
 trait EnvironmentAwareStreamingJob extends EnvironmentAwareSparkJob {
-  
+
   def checkpointLocation: String
-  
+
   override protected lazy val spark: SparkSession = createStreamingSession()
-  
+
   private def createStreamingSession(): SparkSession = {
     logInfo(s"Creating streaming Spark session for $appName in ${environment.name}")
-    
+
     val sparkConfig = SparkSessionConfig.load(config.rawConfig, environment)
-    
+
     val streamingConfigs = Map(
       "spark.sql.streaming.checkpointLocation" -> checkpointLocation,
       "spark.sql.streaming.forceDeleteTempCheckpointLocation" -> "true",
       "spark.sql.adaptive.enabled" -> "false" // Disable AQE for streaming
     ) ++ getEnvironmentStreamingConfigs
-    
+
     EnvironmentSparkSessionFactory.createSession(
       appName = appName,
       config = sparkConfig,
@@ -30,8 +31,8 @@ trait EnvironmentAwareStreamingJob extends EnvironmentAwareSparkJob {
       additionalConfigs = streamingConfigs ++ additionalSparkConfigs
     )
   }
-  
-  private def getEnvironmentStreamingConfigs: Map[String, String] = {
+
+  private def getEnvironmentStreamingConfigs: Map[String, String] =
     environment match {
       case Environment.Development =>
         Map(
@@ -46,10 +47,9 @@ trait EnvironmentAwareStreamingJob extends EnvironmentAwareSparkJob {
       case _ =>
         Map.empty
     }
-  }
-  
+
   def runStreaming(args: Array[String]): StreamingQuery
-  
+
   override def run(args: Array[String]): Unit = {
     val query = runStreaming(args)
     query.awaitTermination()

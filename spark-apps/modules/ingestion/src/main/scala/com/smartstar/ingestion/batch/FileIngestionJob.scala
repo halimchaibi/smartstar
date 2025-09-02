@@ -2,14 +2,15 @@ package com.smartstar.ingestion.batch
 
 import com.smartstar.common.config.{AppConfig, ConfigurationFactory}
 import com.smartstar.common.models.{JobResult, JobStatus}
-import com.smartstar.common.traits.{ConfigurableJob, SparkJob}
+import com.smartstar.common.traits.{ConfigurableJob, Environment, EnvironmentAwareSparkJob, Module}
 import com.smartstar.common.utils.DateTimeUtils
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
-class FileIngestionJob extends SparkJob with ConfigurableJob {
+class FileIngestionJob extends EnvironmentAwareSparkJob with ConfigurableJob {
   
   override def appName: String = "SmartStar-File-Ingestion"
-  override def config: AppConfig = ConfigurationFactory.forModule("ingestion")
+  override def config: AppConfig =
+    ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Ingestion)
   
   override def run(args: Array[String]): Unit = {
     validateConfig()

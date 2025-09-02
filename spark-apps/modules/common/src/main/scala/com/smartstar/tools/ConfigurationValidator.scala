@@ -1,11 +1,14 @@
 package com.smartstar.tools
 
-import com.smartstar.common.config.{ConfigurationFactory, Environment}
+import com.smartstar.common.config.ConfigurationFactory
+import com.smartstar.common.traits.Environment
+import com.smartstar.common.traits.Module
+import com.smartstar.common.traits.Environment.Development
 import com.smartstar.common.utils.LoggingUtils
 
 /**
- * Configuration validation tool for SmartStar project.
- * This tool validates configuration consistency across all environments and modules.
+ * Configuration validation tool for SmartStar project. This tool validates configuration
+ * consistency across all environments and modules.
  */
 object ConfigurationValidator extends LoggingUtils {
 
@@ -14,11 +17,11 @@ object ConfigurationValidator extends LoggingUtils {
     logInfo("=" * 50)
 
     val results = validateAllConfigurations()
-    
+
     printValidationResults(results)
-    
+
     val overallSuccess = results.values.forall(_.isSuccess)
-    
+
     if (overallSuccess) {
       logInfo("✅ All configurations are valid and consistent!")
       System.exit(0)
@@ -40,7 +43,7 @@ object ConfigurationValidator extends LoggingUtils {
     }
 
     // Test each module in development environment
-    val modules = Seq("ingestion", "normalization", "analytics")
+    val modules = Module.all
     modules.foreach { module =>
       results += s"Module: $module" -> validateModule(module)
     }
@@ -51,7 +54,7 @@ object ConfigurationValidator extends LoggingUtils {
     results.toMap
   }
 
-  private def validateEnvironmentDetection(): ValidationResult = {
+  private def validateEnvironmentDetection(): ValidationResult =
     try {
       val env = Environment.detect()
       ValidationResult(
@@ -67,20 +70,15 @@ object ConfigurationValidator extends LoggingUtils {
           details = Seq(ex.toString)
         )
     }
-  }
 
-  private def validateEnvironment(environment: Environment): ValidationResult = {
+  private def validateEnvironment(environment: Environment): ValidationResult =
     try {
-      val config = ConfigurationFactory.forEnvironment(environment)
-      
+      val config = ConfigurationFactory.forEnvironmentAndModule(environment, Module.Core)
+
       val details = Seq(
         s"App Name: ${config.appName}",
         s"Version: ${config.version}",
-        s"Spark Master: ${config.sparkConfig.master}",
-        s"Database Host: ${config.databaseConfig.host}",
-        s"Storage Base Path: ${config.storageConfig.basePath}",
-        s"Data Quality Enabled: ${config.dataQualityConfig.enabled}",
-        s"Monitoring Enabled: ${config.monitoringConfig.metricsEnabled}"
+        s"Spark Master: ${config.sparkConfig.master}"
       )
 
       ValidationResult(
@@ -92,18 +90,18 @@ object ConfigurationValidator extends LoggingUtils {
       case ex: Exception =>
         ValidationResult(
           isSuccess = false,
-          message = s"Failed to load configuration for environment ${environment.name}: ${ex.getMessage}",
+          message =
+            s"Failed to load configuration for environment ${environment.name}: ${ex.getMessage}",
           details = Seq(ex.toString)
         )
     }
-  }
 
-  private def validateModule(moduleName: String): ValidationResult = {
+  private def validateModule(module: Module): ValidationResult =
     try {
-      val config = ConfigurationFactory.forModule(moduleName)
-      
+      val config = ConfigurationFactory.forEnvironmentAndModule(Development, Module.Core)
+
       val details = Seq(
-        s"Module: ${config.module.getOrElse("none")}",
+        s"Module: ${config.module.name}",
         s"Environment: ${config.environment.name}",
         s"App Name: ${config.appName}",
         s"Configuration loaded successfully"
@@ -111,23 +109,22 @@ object ConfigurationValidator extends LoggingUtils {
 
       ValidationResult(
         isSuccess = true,
-        message = s"Module $moduleName configuration is valid",
+        message = s"Module ${module.name} configuration is valid",
         details = details
       )
     } catch {
       case ex: Exception =>
         ValidationResult(
           isSuccess = false,
-          message = s"Failed to load configuration for module $moduleName: ${ex.getMessage}",
+          message = s"Failed to load configuration for module ${module.name}: ${ex.getMessage}",
           details = Seq(ex.toString)
         )
     }
-  }
 
-  private def validateConsistency(): ValidationResult = {
+  private def validateConsistency(): ValidationResult =
     try {
       val isConsistent = ConfigurationFactory.validateConsistency()
-      
+
       if (isConsistent) {
         ValidationResult(
           isSuccess = true,
@@ -149,7 +146,6 @@ object ConfigurationValidator extends LoggingUtils {
           details = Seq(ex.toString)
         )
     }
-  }
 
   private def printValidationResults(results: Map[String, ValidationResult]): Unit = {
     logInfo("\nValidation Results:")
@@ -159,7 +155,7 @@ object ConfigurationValidator extends LoggingUtils {
       val status = if (result.isSuccess) "✅ PASS" else "❌ FAIL"
       logInfo(s"$status $testName")
       logInfo(s"     ${result.message}")
-      
+
       if (result.details.nonEmpty) {
         result.details.foreach { detail =>
           logInfo(s"     - $detail")
@@ -173,8 +169,8 @@ object ConfigurationValidator extends LoggingUtils {
   }
 
   case class ValidationResult(
-    isSuccess: Boolean,
-    message: String,
-    details: Seq[String] = Seq.empty
+      isSuccess: Boolean,
+      message: String,
+      details: Seq[String] = Seq.empty
   )
 }
