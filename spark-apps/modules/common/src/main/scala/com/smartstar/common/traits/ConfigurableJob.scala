@@ -1,7 +1,6 @@
 package com.smartstar.common.traits
 
 import com.smartstar.common.config.AppConfig
-import com.smartstar.common.traits.Environment
 import com.smartstar.common.utils.LoggingUtils
 
 trait ConfigurableJob extends LoggingUtils {
@@ -60,53 +59,4 @@ trait ConfigurableJob extends LoggingUtils {
       )
     }
   }
-
-  private def validateModuleConfig(moduleName: String): Unit =
-    logInfo(s"Validating module-specific configuration for: $moduleName")
-
-    // TODO: Analyze
-//    moduleName.toLowerCase match {
-//      case "ingestion" =>
-//        // Ingestion should have Kafka config if it's a streaming job
-//        if (config.kafkaConfig.bootstrapServers.isEmpty) {
-//          logWarn(
-//            "Ingestion module without Kafka configuration - only batch processing will be available"
-//          )
-//        }
-//
-//      case "analytics" =>
-//        // Analytics might need specific ML libraries
-//        logInfo("Analytics module configuration validated")
-//
-//      case "normalization" =>
-//        // Normalization should have data quality rules enabled
-//        if (!config.dataQualityConfig.enabled) {
-//          logWarn("Data quality validation is disabled for normalization module")
-//        }
-//
-//      case _ =>
-//        logInfo(s"No specific validation rules for module: $moduleName")
-//    }
-
-  /**
-   * Get configuration value with optional override from environment variables
-   */
-  def getConfigValue(path: String, envOverride: Option[String] = None): Option[String] =
-    envOverride
-      .flatMap(env => Option(System.getenv(env)))
-      .orElse {
-        if (config.rawConfig.hasPath(path)) {
-          Some(config.rawConfig.getString(path))
-        } else {
-          None
-        }
-      }
-
-  /**
-   * Get required configuration value with proper error handling
-   */
-  def getRequiredConfigValue(path: String, envOverride: Option[String] = None): String =
-    getConfigValue(path, envOverride).getOrElse {
-      throw new IllegalStateException(s"Required configuration value not found: $path")
-    }
 }

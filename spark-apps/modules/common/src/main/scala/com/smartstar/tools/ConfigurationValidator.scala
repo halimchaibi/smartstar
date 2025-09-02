@@ -1,6 +1,9 @@
 package com.smartstar.tools
 
-import com.smartstar.common.config.{ConfigurationFactory, Environment}
+import com.smartstar.common.config.ConfigurationFactory
+import com.smartstar.common.traits.Environment
+import com.smartstar.common.traits.Environment.Development
+import com.smartstar.common.traits.Module
 import com.smartstar.common.utils.LoggingUtils
 
 /**
@@ -40,7 +43,7 @@ object ConfigurationValidator extends LoggingUtils {
     }
 
     // Test each module in development environment
-    val modules = Seq("ingestion", "normalization", "analytics")
+    val modules = Module.all
     modules.foreach { module =>
       results += s"Module: $module" -> validateModule(module)
     }
@@ -71,16 +74,13 @@ object ConfigurationValidator extends LoggingUtils {
 
   private def validateEnvironment(environment: Environment): ValidationResult = {
     try {
-      val config = ConfigurationFactory.forEnvironment(environment)
+      //TODO:
+      val config = ConfigurationFactory.forEnvironment(environment, Module.Core)
       
       val details = Seq(
         s"App Name: ${config.appName}",
         s"Version: ${config.version}",
-        s"Spark Master: ${config.sparkConfig.master}",
-        s"Database Host: ${config.databaseConfig.host}",
-        s"Storage Base Path: ${config.storageConfig.basePath}",
-        s"Data Quality Enabled: ${config.dataQualityConfig.enabled}",
-        s"Monitoring Enabled: ${config.monitoringConfig.metricsEnabled}"
+        s"Spark Master: ${config.sparkConfig.master}"
       )
 
       ValidationResult(
@@ -98,12 +98,13 @@ object ConfigurationValidator extends LoggingUtils {
     }
   }
 
-  private def validateModule(moduleName: String): ValidationResult = {
+  private def validateModule(module: Module): ValidationResult = {
     try {
-      val config = ConfigurationFactory.forModule(moduleName)
+      //TODO:
+      val config = ConfigurationFactory.forModule(Development, module)
       
       val details = Seq(
-        s"Module: ${config.module.getOrElse("none")}",
+        s"Module: ${config.module.name}",
         s"Environment: ${config.environment.name}",
         s"App Name: ${config.appName}",
         s"Configuration loaded successfully"
@@ -111,14 +112,14 @@ object ConfigurationValidator extends LoggingUtils {
 
       ValidationResult(
         isSuccess = true,
-        message = s"Module $moduleName configuration is valid",
+        message = s"Module $module.name configuration is valid",
         details = details
       )
     } catch {
       case ex: Exception =>
         ValidationResult(
           isSuccess = false,
-          message = s"Failed to load configuration for module $moduleName: ${ex.getMessage}",
+          message = s"Failed to load configuration for module $module.name: ${ex.getMessage}",
           details = Seq(ex.toString)
         )
     }

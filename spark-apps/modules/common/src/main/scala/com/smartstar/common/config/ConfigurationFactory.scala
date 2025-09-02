@@ -22,6 +22,16 @@ object ConfigurationFactory extends LoggingUtils {
     AppConfig.loadForEnvironmentAndModule(environment, module)
   }
 
+  def forEnvironment(environment: Environment, module: Module): AppConfig = {
+    logInfo(s"Creating configuration for environment: ${environment.name}, module: $module.name")
+    AppConfig.loadForEnvironmentAndModule(environment, module)
+  }
+
+  def forModule(environment: Environment, module: Module): AppConfig = {
+    logInfo(s"Creating configuration for environment: ${environment.name}, module: $module.name")
+    AppConfig.loadForEnvironmentAndModule(environment, module)
+  }
+
   /**
    * Validate that configuration is consistent across environments
    */
