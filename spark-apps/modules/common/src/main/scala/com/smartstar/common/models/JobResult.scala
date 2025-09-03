@@ -17,6 +17,7 @@ case class JobResult(
 }
 
 sealed trait JobStatus
+
 object JobStatus {
   case object Running extends JobStatus
   case object Success extends JobStatus

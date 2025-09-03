@@ -117,3 +117,19 @@ buildNumber.properties
 
 # Kubernetes secrets
 *.secret.yaml
+
+# Docker data
+kafka/data/*
+kafka/data/metadata/*
+kafka/logs/*
+kafka/metadata/*
+mosquitto/data/*
+mosquitto/logs/*
+postgres/data/*
+minio/data/*
+
+# Local files adn dir
+note-books/*
+scripts/*
+.vscode
+.idea

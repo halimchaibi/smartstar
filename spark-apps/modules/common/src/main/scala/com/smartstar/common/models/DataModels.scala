@@ -18,6 +18,7 @@ case class DataTarget(
 )
 
 sealed trait SourceType
+
 object SourceType {
   case object Database extends SourceType
   case object File extends SourceType
@@ -26,6 +27,7 @@ object SourceType {
 }
 
 sealed trait TargetType
+
 object TargetType {
   case object Database extends TargetType
   case object File extends TargetType
@@ -33,6 +35,7 @@ object TargetType {
 }
 
 sealed trait WriteMode
+
 object WriteMode {
   case object Append extends WriteMode
   case object Overwrite extends WriteMode
