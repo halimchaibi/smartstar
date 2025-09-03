@@ -43,39 +43,7 @@ log_info "Setting up Docker environment..."
 
 cd "$DOCKER_DIR"
 
-# Create necessary directories
-log_info "Creating volume directories..."
-mkdir -p kafka/data zookeeper/data zookeeper/logs
-mkdir -p mosquitto/data mosquitto/logs  
-mkdir -p postgres/data
-mkdir -p minio/data
-
-# Set permissions for new directories only
-chmod 755 kafka zookeeper mosquitto postgres minio 2>/dev/null || true
-find kafka zookeeper mosquitto postgres minio -type d -exec chmod 755 {} \; 2>/dev/null || true
-
-# Create Kafka Connect config if needed
-if [ ! -f "kafka/connect-distributed.properties" ]; then
-    log_info "Creating Kafka Connect configuration..."
-    cat > kafka/connect-distributed.properties << 'EOF'
-bootstrap.servers=localhost:9092
-group.id=external-connect-cluster
-key.converter=org.apache.kafka.connect.json.JsonConverter
-value.converter=org.apache.kafka.connect.json.JsonConverter
-key.converter.schemas.enable=false
-value.converter.schemas.enable=false
-offset.storage.topic=_connect-offsets
-offset.storage.replication.factor=1
-config.storage.topic=_connect-configs
-config.storage.replication.factor=1
-status.storage.topic=_connect-status
-status.storage.replication.factor=1
-rest.port=8083
-plugin.path=/etc/kafka-connect/plugins
-EOF
-fi
-
-# Ensure Mosquitto config exists
+# Create Mosquitto config if needed
 if [ ! -f "mosquitto/config/mosquitto.conf" ]; then
     log_info "Creating Mosquitto configuration..."
     mkdir -p mosquitto/config
@@ -101,8 +69,8 @@ else
     DOCKER_COMPOSE="docker compose"
 fi
 
-$DOCKER_COMPOSE -f docker-compose-simple.yml down &> /dev/null || true
-$DOCKER_COMPOSE -f docker-compose-simple.yml up -d
+$DOCKER_COMPOSE -f docker-compose-dev.yml down &> /dev/null || true
+$DOCKER_COMPOSE -f docker-compose-dev.yml up -d
 
 log_info "Waiting for services to start..."
 sleep 20
@@ -164,4 +132,4 @@ echo -e "\n${BLUE}📚 For complete setup including prerequisites:${NC}"
 echo -e "   ${YELLOW}./setup-dev-env.sh${NC}"
 
 echo -e "\n${BLUE}🛑 To stop services:${NC}"
-echo -e "   ${YELLOW}cd spark-apps/docker && $DOCKER_COMPOSE down${NC}\n"
+echo -e "   ${YELLOW}cd spark-apps/docker && $DOCKER_COMPOSE -f docker-compose-dev.yml down${NC}\n"

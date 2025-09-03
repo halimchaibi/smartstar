@@ -425,11 +425,11 @@ start_docker_services() {
     
     # Stop any existing services
     log_info "Stopping any existing services..."
-    $DOCKER_COMPOSE down &> /dev/null || true
+    $DOCKER_COMPOSE -f docker-compose-dev.yml down &> /dev/null || true
     
     # Start services
     log_info "Starting Docker Compose services..."
-    $DOCKER_COMPOSE up -d
+    $DOCKER_COMPOSE -f docker-compose-dev.yml up -d
     
     # Wait for services to be ready
     log_info "Waiting for services to start..."
@@ -606,7 +606,7 @@ show_status_and_next_steps() {
     echo -e "4. Monitor logs:"
     echo -e "   ${YELLOW}docker-compose logs -f kafka${NC}"
     echo -e "5. Stop environment:"
-    echo -e "   ${YELLOW}cd spark-apps/docker && $DOCKER_COMPOSE down${NC}"
+    echo -e "   ${YELLOW}cd spark-apps/docker && $DOCKER_COMPOSE -f docker-compose-dev.yml down${NC}"
     
     echo -e "\n${BLUE}📚 Documentation:${NC}"
     echo -e "  • Project README: ${GREEN}./README.md${NC}"
