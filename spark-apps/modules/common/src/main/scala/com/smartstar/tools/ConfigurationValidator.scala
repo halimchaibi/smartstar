@@ -74,8 +74,7 @@ object ConfigurationValidator extends LoggingUtils {
 
   private def validateEnvironment(environment: Environment): ValidationResult = {
     try {
-      //TODO:
-      val config = ConfigurationFactory.forEnvironment(environment, Module.Core)
+      val config = ConfigurationFactory.forEnvironmentAndModule(environment, Module.Core)
       
       val details = Seq(
         s"App Name: ${config.appName}",
@@ -99,8 +98,7 @@ object ConfigurationValidator extends LoggingUtils {
 
   private def validateModule(module: Module): ValidationResult = {
     try {
-      //TODO:
-      val config = ConfigurationFactory.forModule(Development, module)
+      val config = ConfigurationFactory.forEnvironmentAndModule(Development, module)
       
       val details = Seq(
         s"Module: ${config.module.name}",
@@ -111,14 +109,14 @@ object ConfigurationValidator extends LoggingUtils {
 
       ValidationResult(
         isSuccess = true,
-        message = s"Module $module.name configuration is valid",
+        message = s"Module ${module.name} configuration is valid",
         details = details
       )
     } catch {
       case ex: Exception =>
         ValidationResult(
           isSuccess = false,
-          message = s"Failed to load configuration for module $module.name: ${ex.getMessage}",
+          message = s"Failed to load configuration for module ${module.name}: ${ex.getMessage}",
           details = Seq(ex.toString)
         )
     }

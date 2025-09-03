@@ -30,7 +30,7 @@ object Module {
     case "analytics"     => Some(Analytics)
     case "ingestion"     => Some(Ingestion)
     case "reporting"     => Some(Reporting)
-    case "normalization" => Some(Reporting)
+    case "normalization" => Some(Normalization)
     case _           => None
   }
 
@@ -44,5 +44,5 @@ object Module {
       case _: IllegalArgumentException => Some(Core)
     }
   }
-  val all: List[Module] = List(Core, Analytics, Ingestion, Reporting)
+  val all: List[Module] = List(Core, Analytics, Ingestion, Reporting, Normalization)
 }
