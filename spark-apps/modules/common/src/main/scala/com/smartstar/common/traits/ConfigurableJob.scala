@@ -28,35 +28,13 @@ trait ConfigurableJob extends LoggingUtils {
 
   private def validateProductionConfig(): Unit = {
     logInfo("Validating production-specific configuration...")
-
-    // Production should not use local Spark master
-    require(
-      !config.sparkConfig.master.startsWith("local"),
-      "Production environment should not use local Spark master"
-    )
-
-    // Production should have proper database configuration
-//    require(
-//      !config.databaseConfig.host.contains("localhost"),
-//      "Production environment should not use localhost database"
-//    )
-//
-//    // Production should have SSL enabled for database
-//    require(
-//      config.databaseConfig.ssl,
-//      "Production environment should use SSL for database connections"
-//    )
+    //TODO: add production-specific validations
   }
 
   private def validateTestConfig(): Unit = {
     logInfo("Validating test-specific configuration...")
-
     // Test environment should use minimal resources
-    val sparkConfig = config.sparkConfig
-    if (sparkConfig.executorCores > 2) {
-      logWarn(
-        "Test environment using more than 2 executor cores - consider reducing for faster tests"
-      )
-    }
+    //TODO: add test-specific validations
+
   }
 }

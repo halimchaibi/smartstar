@@ -26,6 +26,7 @@ services:
     ports:
       - "9092:9092"
       - "9093:9093"
+      - "9094:9094"
     volumes:
       - ./kafka/data:/var/lib/kafka/data
       - ./kafka/logs:/opt/kafka/logs
@@ -36,11 +37,13 @@ services:
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@smartstar-kafka-broker:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://smartstar-kafka-broker:9092,PLAINTEXT_HOST://localhost:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://smartstar-kafka-broker:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       
+
+
       # Storage Configuration
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_METADATA_LOG_DIR: /var/lib/kafka/metadata/
@@ -134,9 +137,6 @@ services:
       - "9001:9001"
     volumes:
       - ./minio/data/:/data
-    environment:
-      MINIO_ACCESS_KEY: userkey
-      MINIO_SECRET_KEY: usersecretkey
     command: server /data --console-address ":9001"
     deploy:
       resources:

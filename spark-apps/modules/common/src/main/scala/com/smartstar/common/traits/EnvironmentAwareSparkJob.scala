@@ -1,7 +1,7 @@
 package com.smartstar.common.traits
 
 import org.apache.spark.sql.SparkSession
-import com.smartstar.common.config.{AppConfig, SparkSessionConfig}
+import com.smartstar.common.config.AppConfig
 import com.smartstar.common.session.EnvironmentSparkSessionFactory
 import com.smartstar.common.utils.LoggingUtils
 
@@ -23,15 +23,7 @@ trait EnvironmentAwareSparkJob extends LoggingUtils {
 
   private def createEnvironmentAwareSession(): SparkSession = {
     logInfo(s"Creating environment-aware Spark session for $appName in ${environment.name}")
-
-    val sparkConfig = SparkSessionConfig.load(config.rawConfig, environment)
-
-    EnvironmentSparkSessionFactory.createSession(
-      appName = appName,
-      config = sparkConfig,
-      environment = environment,
-      additionalConfigs = additionalSparkConfigs
-    )
+    EnvironmentSparkSessionFactory.createSession(config)
   }
 
   def run(args: Array[String]): Unit

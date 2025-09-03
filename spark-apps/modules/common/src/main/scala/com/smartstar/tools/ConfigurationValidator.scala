@@ -80,7 +80,6 @@ object ConfigurationValidator extends LoggingUtils {
       val details = Seq(
         s"App Name: ${config.appName}",
         s"Version: ${config.version}",
-        s"Spark Master: ${config.sparkConfig.master}"
       )
 
       ValidationResult(

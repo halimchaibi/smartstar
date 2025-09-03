@@ -126,3 +126,9 @@ mosquitto/data/*
 mosquitto/logs/*
 postgres/data/*
 minio/data/*
+
+# Local files adn dir
+note-books/*
+scripts/*
+.vscode
+.idea

@@ -4,13 +4,14 @@ import com.smartstar.common.config.{AppConfig, ConfigurationFactory}
 import com.smartstar.common.traits.{ConfigurableJob, Environment, EnvironmentAwareSparkJob, Module}
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-//import org.apache.spark.sql.streaming.Trigger
 
 class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
 
-  override def appName: String = "SmartStar-Kafka-Streaming"
+  override def appName: String = s"${config.appName}-KafkaStreamingJob"
+
   override def config: AppConfig =
     ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Ingestion)
+
 
   // Customize configurations per job
   override def additionalSparkConfigs: Map[String, String] = Map(
@@ -22,11 +23,11 @@ class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
 
     validateConfig()
 
-    logInfo(s"Running in environment: ${config.environment}")
-    logInfo(s"Module: ${config.module}")
+    logInfo(s"Running in environment: ${config.environment.name}")
+    logInfo(s"Module: ${config.module.name}")
     // Access Spark-specific configuration
-    logInfo(s"Spark master: ${config.sparkConfig.master}")
-    logInfo(s"Executor memory: ${config.sparkConfig.executorMemory}")
+    logInfo(s"Spark master: ${config.rawConfig.getString("spark.master")}")
+    logInfo(s"Executor memory: ${config.rawConfig.getString("spark.executor.memory")}")
 
     // Read from Kafka
     val kafkaDF = readFromKafka()
@@ -42,9 +43,9 @@ class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
   }
 
   private def readFromKafka(): DataFrame = {
-    val topics = getString("kafka.topics.input")
-    val kafkaBootstrapServers = getString(s"kafka.bootstrap-servers")
-
+    val topics = getString("kafka.topics")
+    val kafkaBootstrapServers = getString("kafka.bootstrap-servers")
+    
     logInfo(s"Reading from Kafka topic: $topics")
 
     spark.readStream
@@ -75,20 +76,21 @@ class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
 
   private def writeStream(df: DataFrame) = {
 
-    val bronzeBasePath = getString("ingestion.bronze.base.path")
-    val checkpointBase = getString("ingestion.checkpoint.base.path")
-    logInfo(s"Writing stream to $checkpointBase")
+    val output = getString("storage.datalake.output")
+    val checkpoint = getString("kafka.checkpoint-location")
+    logInfo(s"Writing stream to $output")
 
     df.writeStream
       .format("json")
-      .option("path", bronzeBasePath)
-      .option("checkpointLocation", checkpointBase)
+      .option("path", output)
+      .option("checkpointLocation", checkpoint)
       .partitionBy("topic", "year", "month", "day")
       .outputMode("append")
       .start()
   }
 
-  private def getString(path: String): String = config.rawConfig.getString(path)
+  private def getString(path: String): String = config.rawConfig getString(path)
+
 }
 
 object KafkaStreamingJob {
@@ -97,109 +99,8 @@ object KafkaStreamingJob {
     try {
       job.run(args)
     } finally {
-      job.close()
+      //TODO
+      //job.close()
     }
   }
 }
-
-//  object ConfigDebug {
-//
-//    def printConfig(config: AppConfig): Unit = {
-//      println("=== AppConfig Debug ===")
-//      println(s"App Name: ${config.appName}")
-//      println(s"Version: ${config.version}")
-//      println(s"Environment: ${config.environment}")
-//      println(s"Module: ${config.module}")
-//      println()
-//
-//      println("=== Spark Config ===")
-//      println(s"Master: ${config.sparkConfig.master}")
-//      println(s"App Name: ${config.sparkConfig.appName}")
-//      println(s"Executor Memory: ${config.sparkConfig.executorMemory}")
-//      println(s"Executor Cores: ${config.sparkConfig.executorCores}")
-//      println(s"Driver Memory: ${config.sparkConfig.driverMemory}")
-//      println()
-//
-//      println("=== Database Config ===")
-//      println(s"Host: ${config.databaseConfig.host}")
-//      println(s"Port: ${config.databaseConfig.port}")
-//      println(s"Database: ${config.databaseConfig.name}")
-//      println(s"Username: ${config.databaseConfig.username}")
-//      println(s"SSL: ${config.databaseConfig.ssl}")
-//      println()
-//
-//      println("=== Storage Config ===")
-//      println(s"Base Path: ${config.storageConfig.basePath}")
-//      println(s"Checkpoint Location: ${config.storageConfig.checkpointLocation}")
-//      println(s"Input Format: ${config.storageConfig.inputFormat}")
-//      println(s"Output Format: ${config.storageConfig.outputFormat}")
-//      println()
-//    }
-//
-//    def printRawConfig(config: AppConfig): Unit = {
-//      import com.typesafe.config.ConfigRenderOptions
-//
-//      val options = ConfigRenderOptions.defaults()
-//        .setComments(false)
-//        .setOriginComments(false)
-//        .setFormatted(true)
-//        .setJson(false)
-//
-//      println("=== Raw Configuration ===")
-//      println(config.rawConfig.root().render(options))
-//      println("========================")
-//    }
-//
-//    def validatePaths(config: AppConfig): Unit = {
-//      val requiredPaths = Seq(
-//        "app.name",
-//        "app.version",
-//        "environment",
-//        "spark.master",
-//        "spark.executor.memory",
-//        "database.host",
-//        "kafka.bootstrap-servers",
-//        "storage.base-path"
-//      )
-//
-//      println("=== Configuration Path Validation ===")
-//      requiredPaths.foreach { path =>
-//        if (config.rawConfig.hasPath(path)) {
-//          val value = config.rawConfig.getString(path)
-//          println(s"✅ $path = $value")
-//        } else {
-//          println(s"❌ $path = MISSING")
-//        }
-//      }
-//      println("===================================")
-//    }
-//  }
-//}
-
-// ===== QUICK TEST =====
-
-/*
-object ConfigTest extends App {
-
-  // Set environment for testing
-  System.setProperty("SPARK_ENV", "development")
-  System.setProperty("MODULE_NAME", "ingestion")
-
-  try {
-    val config = AppConfig.load()
-
-    println("✅ Configuration loaded successfully!")
-    ConfigDebug.printConfig(config)
-    ConfigDebug.validatePaths(config)
-
-    // Test rawConfig access
-    println("\n=== Raw Config Test ===")
-    println(s"Custom value: ${config.rawConfig.getString("app.name")}")
-
-  } catch {
-    case ex: Exception =>
-      println(s"❌ Configuration loading failed: ${ex.getMessage}")
-      ex.printStackTrace()
-  }
-
- */

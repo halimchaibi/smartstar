@@ -2,6 +2,8 @@ package com.smartstar.common.config
 
 import com.smartstar.common.traits.{Environment, Module}
 import com.smartstar.common.utils.LoggingUtils
+import com.smartstar.common.config.AppConfig
+
 /**
  * Centralized configuration factory for consistent configuration loading across all SmartStar
  * applications and modules.
@@ -46,6 +48,7 @@ object ConfigurationFactory extends LoggingUtils {
     environments.foreach { env =>
       modules.foreach { module =>
         try {
+          //TODO: needs refactor to avoid loading multiple times the same config
           val config = AppConfig.loadForEnvironmentAndModule(env, module)
           val isValid = AppConfig.validate(config.rawConfig)
 
@@ -82,7 +85,6 @@ object ConfigurationFactory extends LoggingUtils {
       "environment" -> environment.name,
       "app_name" -> config.appName,
       "version" -> config.version,
-      "spark_master" -> config.sparkConfig.master
     )
   }
 
