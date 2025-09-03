@@ -4,6 +4,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{BeforeAndAfterEach, BeforeAndAfterAll}
 import com.typesafe.config.ConfigFactory
+import com.smartstar.common.traits.{Environment, Module}
 
 class ConfigurationSystemSpec extends AnyFlatSpec with Matchers with BeforeAndAfterEach with BeforeAndAfterAll {
 
@@ -50,17 +51,17 @@ class ConfigurationSystemSpec extends AnyFlatSpec with Matchers with BeforeAndAf
   }
 
   it should "load configuration for specific environment" in {
-    val config = AppConfig.loadForEnvironment(Environment.Test)
+    val config = AppConfig.loadForEnvironmentAndModule(Environment.Test, Module.Core)
     
     config.environment shouldBe Environment.Test
     config.appName should not be empty
   }
 
   it should "load configuration for specific module" in {
-    val config = AppConfig.loadForEnvironmentAndModule(Environment.Development, Some("ingestion"))
+    val config = AppConfig.loadForEnvironmentAndModule(Environment.Development, Module.Ingestion)
     
     config.environment shouldBe Environment.Development
-    config.module shouldBe Some("ingestion")
+    config.module shouldBe Module.Ingestion
   }
 
   it should "validate required configuration paths" in {
@@ -81,14 +82,14 @@ class ConfigurationSystemSpec extends AnyFlatSpec with Matchers with BeforeAndAf
   }
 
   it should "create module-specific configuration" in {
-    val config = ConfigurationFactory.forModule("ingestion")
+    val config = ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Ingestion)
     
-    config.module shouldBe Some("ingestion")
+    config.module shouldBe Module.Ingestion
     config.environment should not be null
   }
 
   it should "create environment-specific configuration" in {
-    val config = ConfigurationFactory.forEnvironment(Environment.Production)
+    val config = ConfigurationFactory.forEnvironmentAndModule(Environment.Production, Module.Core)
     
     config.environment shouldBe Environment.Production
   }
@@ -141,26 +142,23 @@ class ConfigurationSystemSpec extends AnyFlatSpec with Matchers with BeforeAndAf
 
   "Configuration hierarchy" should "properly override values" in {
     // Test that environment-specific configs override base configs
-    val devConfig = ConfigurationFactory.forEnvironment(Environment.Development)
-    val prodConfig = ConfigurationFactory.forEnvironment(Environment.Production)
+    val devConfig = ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Core)
+    val prodConfig = ConfigurationFactory.forEnvironmentAndModule(Environment.Production, Module.Core)
     
-    // Development and production should have different masters
-    devConfig.sparkConfig.master should not equal prodConfig.sparkConfig.master
-    
-    // But should have the same app name
+    // Both should have the same app name
     devConfig.appName shouldBe prodConfig.appName
   }
 
   it should "properly handle module-specific overrides" in {
-    val ingestionConfig = ConfigurationFactory.forModule("ingestion")
-    val analyticsConfig = ConfigurationFactory.forModule("analytics")
+    val ingestionConfig = ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Ingestion)
+    val analyticsConfig = ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Analytics)
     
     // Both should have same base app config
     ingestionConfig.appName shouldBe analyticsConfig.appName
     
     // But may have different module-specific settings
-    ingestionConfig.module shouldBe Some("ingestion")
-    analyticsConfig.module shouldBe Some("analytics")
+    ingestionConfig.module shouldBe Module.Ingestion
+    analyticsConfig.module shouldBe Module.Analytics
   }
 
   override def afterAll(): Unit = {

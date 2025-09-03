@@ -99,8 +99,13 @@ object KafkaStreamingJob {
     try {
       job.run(args)
     } finally {
-      //TODO
-      //job.close()
+      // Close resources and stop Spark session
+      try {
+        job.close()
+      } catch {
+        case ex: Exception =>
+          println(s"Warning: Error while closing job resources: ${ex.getMessage}")
+      }
     }
   }
 }
