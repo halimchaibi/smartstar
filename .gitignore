@@ -120,6 +120,7 @@ buildNumber.properties
 
 # Docker data
 kafka/data/*
+kafka/data/metadata/*
 kafka/logs/*
 kafka/metadata/*
 mosquitto/data/*
