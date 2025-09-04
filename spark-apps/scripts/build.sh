@@ -2,26 +2,35 @@
 
 echo "🔨 Building SmartStar Spark Applications..."
 
-# Check if SBT is installed
-if ! command -v sbt &> /dev/null; then
-    echo "❌ SBT is not installed. Please install SBT first."
+# Find SBT (local or system)
+SBT_CMD=""
+if command -v sbt &> /dev/null; then
+    SBT_CMD="sbt"
+elif [ -x "../../sbt/bin/sbt" ]; then
+    SBT_CMD="../../sbt/bin/sbt"
+elif [ -x "../sbt/bin/sbt" ]; then
+    SBT_CMD="../sbt/bin/sbt"
+else
+    echo "❌ SBT is not installed and not found locally. Please install SBT first."
     exit 1
 fi
 
+echo "Using SBT: $SBT_CMD"
+
 # Clean and compile
 echo "🧹 Cleaning previous builds..."
-sbt clean
+$SBT_CMD clean
 
 echo "⚙️  Compiling source code..."
-sbt compile
+$SBT_CMD compile
 
 # Run tests
 echo "🧪 Running tests..."
-sbt test
+$SBT_CMD test
 
 # Create assembly JARs
 echo "📦 Creating assembly JARs..."
-sbt assembly
+$SBT_CMD assembly
 
 echo "✅ Build completed successfully!"
 echo ""

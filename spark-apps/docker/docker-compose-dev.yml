@@ -1,5 +1,5 @@
 services:
-  do:
+  mosquitto:
     image: eclipse-mosquitto:2.0
     container_name: smartstar-mosquitto-mqtt
     restart: unless-stopped
@@ -33,7 +33,7 @@ services:
       - ./kafka/logs:/opt/kafka/logs
       - ./kafka/metadata:/var/lib/kafka/metadata
     environment:
-  # KRaft Configuration
+      # KRaft Configuration
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@smartstar-kafka-broker:9093
