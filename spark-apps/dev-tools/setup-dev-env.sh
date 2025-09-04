@@ -373,10 +373,7 @@ EOF
     log_info "Setting up Kafka Connect plugins..."
     # Look for the JAR file in multiple locations
     JAR_LOCATIONS=(
-        "../lib/kafka-connect-mqtt-assembly-10.0.0.jar"
         "../libs/kafka-connect-mqtt-assembly-10.0.0.jar" 
-        "../../lib/kafka-connect-mqtt-assembly-10.0.0.jar"
-        "./kafka-connect-mqtt-assembly-10.0.0.jar"
     )
     
     JAR_FOUND=false
@@ -701,11 +698,11 @@ build_and_run() {
         
         # Optionally run the application
         echo
-        read -p "Do you want to run the Scala application now? (y/n): " -n 1 -r
+        read -p "Do you want to build the Scala application now? (y/n): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "Running Scala application..."
-            (cd .. && sbt run)
+            (cd .. && sbt assembly)
         fi
     fi
     
@@ -736,7 +733,7 @@ build_and_run() {
 }
 
 init-mqtt-connector() {
-    KAFKA_CONNECT_URL="http://smartstar-kafka-connect:8083"
+    KAFKA_CONNECT_URL="http://localhost:8083"
     CONNECTOR_NAME="mqtt-source-wildcard"
 
     echo "Creating MQTT Source Connector..."
@@ -990,7 +987,7 @@ main() {
             
             # Initialize connectors and S3 bucket
             log_info "Waiting for the environment to be fully up..."
-            sleep 10
+            sleep 5
             log_info "Initializing Kafka Connect plugins and connectors..."
             init-mqtt-connector
 
