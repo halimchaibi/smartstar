@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     ports:
       - "1883:1883"
+    user: "0:0"   # run as root inside container
     volumes:
       - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/data:/mosquitto/data
