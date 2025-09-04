@@ -16,6 +16,24 @@ cd "$DOCKER_DIR" || {
     exit 1
 }
 
+# ==============================================================================
+# CONFIGURATION VARIABLES - Modify these as needed
+# ==============================================================================
+
+CONNECTOR_VERSION="${CONNECTOR_VERSION:-10.0.0}"
+STREAM_REACTOR_BASE_URL="${STREAM_REACTOR_BASE_URL:-https://github.com/lensesio/stream-reactor/releases/download}"
+COURSIER_DOWNLOAD_URL="${COURSIER_DOWNLOAD_URL:-https://github.com/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz}"
+DOCKER_GPG_URL="${DOCKER_GPG_URL:-https://download.docker.com/linux/ubuntu/gpg}"
+DOCKER_REPO_URL="${DOCKER_REPO_URL:-https://download.docker.com/linux/ubuntu}"
+DOCKER_COMPOSE_RELEASES_URL="${DOCKER_COMPOSE_RELEASES_URL:-https://api.github.com/repos/docker/compose/releases/latest}"
+DOCKER_COMPOSE_DOWNLOAD_URL="${DOCKER_COMPOSE_DOWNLOAD_URL:-https://github.com/docker/compose/releases/download}"
+MINIO_CLIENT_URL="${MINIO_CLIENT_URL:-https://dl.min.io/client/mc/release/linux-amd64/mc}"
+SBT_KEYSERVER_URL="${SBT_KEYSERVER_URL:-https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823}"
+
+# SBT Repository URLs
+SBT_REPO_MAIN="${SBT_REPO_MAIN:-https://repo.scala-sbt.org/scalasbt/debian all main}"
+SBT_REPO_OLD="${SBT_REPO_OLD:-https://repo.scala-sbt.org/scalasbt/debian /}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -308,6 +326,85 @@ install_python() {
     
     log_success "Python 3 installed"
 }
+download-mqtt-kafka-connector() {
+    log_info "Downloading Kafka Connect MQTT Connector..."
+    CONNECTOR_VERSION="10.0.0"
+    DOWNLOAD_URL="https://github.com/lensesio/stream-reactor/releases/download/${CONNECTOR_VERSION}/kafka-connect-mqtt-${CONNECTOR_VERSION}.zip"
+    TEMP_DIR="/tmp/kafka-connect-mqtt-$$"
+    LIBS_DIR="../libs"
+
+    # Ensure we're in the right directory or create paths relative to current location
+    if [ ! -d "smartstar" ]; then
+        log_info "Creating smartstar directory structure..."
+        mkdir -p "$LIBS_DIR"
+    fi
+
+    log_info "Downloading Kafka Connect MQTT connector v${CONNECTOR_VERSION}..."
+
+    # Create temporary directory
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+
+    # Download the connector
+    if curl -L -o "kafka-connect-mqtt-${CONNECTOR_VERSION}.zip" "$DOWNLOAD_URL"; then
+        log_success "Download completed"
+    else
+        log_error "Failed to download connector"
+        cd - > /dev/null
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    # Unzip the connector
+    log_info "Extracting connector..."
+    if unzip -q "kafka-connect-mqtt-${CONNECTOR_VERSION}.zip"; then
+        log_success "Extraction completed"
+    else
+        log_error "Failed to extract connector"
+        cd - > /dev/null
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    # Find the assembly JAR file
+    log_info "Looking for assembly JAR file..."
+    ASSEMBLY_JAR=$(find . -name "*assembly*.jar" -type f | head -n 1)
+
+    if [ -z "$ASSEMBLY_JAR" ]; then
+        log_error "Assembly JAR file not found"
+        cd - > /dev/null
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    log_info "Found assembly JAR: $(basename "$ASSEMBLY_JAR")"
+
+    # Go back to original directory
+    cd - > /dev/null
+
+    # Copy the assembly JAR to libs directory
+    log_info "Copying assembly JAR to $LIBS_DIR..."
+    if cp "$TEMP_DIR/$ASSEMBLY_JAR" "$LIBS_DIR/"; then
+        log_success "JAR file copied to $LIBS_DIR/$(basename "$ASSEMBLY_JAR")"
+    else
+        log_error "Failed to copy JAR file"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    # Cleanup temporary directory
+    log_info "Cleaning up temporary files..."
+    rm -rf "$TEMP_DIR"
+
+    log_success "Kafka Connect MQTT connector installation completed!"
+    log_info "JAR location: $LIBS_DIR/$(basename "$ASSEMBLY_JAR")"
+
+    # List the libs directory contents
+    if [ -d "$LIBS_DIR" ]; then
+        log_info "Contents of $LIBS_DIR:"
+        ls -la "$LIBS_DIR"
+    fi
+}    
 
 # Create required directories for Docker services
 create_service_directories() {
@@ -689,23 +786,7 @@ build_and_run() {
         
         log_success "Docker services started with auto-created volumes"
     fi
-        
-    # Build Scala/SBT project if build.sbt exists (check in parent directory)
-    if [ -f "../build.sbt" ]; then
-        log_info "Building SBT project..."
-        (cd .. && sbt clean compile)
-        log_success "SBT project built successfully"
-        
-        # Optionally run the application
-        echo
-        read -p "Do you want to build the Scala application now? (y/n): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Running Scala application..."
-            (cd .. && sbt assembly)
-        fi
-    fi
-    
+
     # Install Python dependencies if requirements.txt exists
     if [ -f "requirements.txt" ] || [ -f "../requirements.txt" ]; then
         log_info "Installing Python dependencies..."
@@ -824,7 +905,79 @@ init-s3-bucket() {
     fi
 }
 
-# Interactive menu function
+# Create Kafka topics for the streaming pipeline
+create_kafka_topics() {
+    log_info "Creating Kafka topics..."
+    kafka_container="smartstar-kafka-broker"
+    local bootstrap_servers="localhost:9092"
+    local max_attempts=30
+    local attempt=1
+    
+    # Wait for Kafka to be ready
+    log_info "Waiting for Kafka to be ready..."
+    while [ $attempt -le $max_attempts ]; do
+        if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh --bootstrap-server $bootstrap_servers --list > /dev/null 2>&1; then
+            log_success "Kafka is ready"
+            break
+        else
+            log_info "Attempt $attempt/$max_attempts: Waiting for Kafka..."
+            sleep 2
+            attempt=$((attempt + 1))
+        fi
+    done
+    
+    if [ $attempt -gt $max_attempts ]; then
+        log_error "Kafka did not become ready within timeout"
+        return 1
+    fi
+    
+    # Define topics to create
+    local topics=(
+        "sensors.temperature:3:1"
+        "sensors.air_quality:3:1"
+    )
+    
+    # Create each topic
+    for topic_config in "${topics[@]}"; do
+        IFS=':' read -r topic_name partitions replication <<< "$topic_config"
+        
+        log_info "Creating topic: $topic_name (partitions=$partitions, replication=$replication)"
+        
+        if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server $bootstrap_servers \
+            --create \
+            --topic "$topic_name" \
+            --partitions "$partitions" \
+            --replication-factor "$replication" \
+            --if-not-exists > /dev/null 2>&1; then
+            log_success "Topic '$topic_name' created successfully"
+        else
+            log_warning "Topic '$topic_name' might already exist or creation failed"
+        fi
+    done
+    
+    # List all topics to verify
+    log_info "Current Kafka topics:"
+    if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh --bootstrap-server $bootstrap_servers --list; then
+        log_success "Kafka topics creation completed"
+    else
+        log_error "Failed to list Kafka topics"
+        return 1
+    fi
+    
+    # Optional: Show topic details
+    log_info "Topic details:"
+    for topic_config in "${topics[@]}"; do
+        IFS=':' read -r topic_name partitions replication <<< "$topic_config"
+        echo "Topic: $topic_name"
+        docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server $bootstrap_servers \
+            --describe \
+            --topic "$topic_name" 2>/dev/null || true
+        echo "---"
+    done
+}
+
 # Interactive menu function
 show_menu() {
     echo
@@ -853,6 +1006,8 @@ test_function() {
     echo "8) check_env_health"
     echo "9) init-mqtt-connector"
     echo "10) init-s3-bucket"
+    echo "11) download-mqtt-kafka-connector"
+    echo "12) create_kafka_topics"
     echo
     read -p "Select function to test (1-10): " -n 2 -r
     echo
@@ -868,6 +1023,8 @@ test_function() {
         8) check_env_health ;;
         9) init-mqtt-connector ;;
         10) init-s3-bucket ;;
+        11) download-mqtt-kafka-connector ;;
+        12) create_kafka_topics ;;
         *) log_error "Invalid function selection"; exit 1 ;;
     esac
 }
@@ -900,6 +1057,8 @@ main() {
                     "check_env_health") check_env_health ;;
                     "init-mqtt-connector") init-mqtt-connector ;;
                     "init-s3-bucket") init-s3-bucket ;;
+                    "download-mqtt-kafka-connector") download-mqtt-kafka-connector ;;
+                    "create_kafka_topics") create_kafka_topics ;;
                     *) log_error "Unknown function: $2"; exit 1 ;;
                 esac
             else
@@ -974,6 +1133,7 @@ main() {
             source ~/.bashrc 2>/dev/null || true
             sleep 5
             
+            download-mqtt-kafka-connector
             create_service_directories
             check_docker_compose
             
@@ -990,7 +1150,7 @@ main() {
             sleep 5
             log_info "Initializing Kafka Connect plugins and connectors..."
             init-mqtt-connector
-
+            create_kafka_topics
             log_info "Initializing s3 bucket..."
             init-s3-bucket
 
