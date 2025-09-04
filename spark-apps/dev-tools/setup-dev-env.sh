@@ -736,7 +736,7 @@ build_and_run() {
 }
 
 init-mqtt-connector() {
-    KAFKA_CONNECT_URL="http://localhost:8083"
+    KAFKA_CONNECT_URL="http://smartstar-kafka-connect:8083"
     CONNECTOR_NAME="mqtt-source-wildcard"
 
     echo "Creating MQTT Source Connector..."
@@ -827,59 +827,181 @@ init-s3-bucket() {
     fi
 }
 
-# Main execution
+# Interactive menu function
+# Interactive menu function
+show_menu() {
+    echo
+    log_info "Local Development Stack Setup - Choose an option:"
+    echo "1) cleanup   - Clean up all containers, volumes, and data directories"
+    echo "2) setup     - Run complete setup (install dependencies + start services)"
+    echo "3) test      - Run a single function for testing"
+    echo "4) all       - Run everything (setup + initialize connectors + S3 bucket)"
+    echo
+    read -p "Select option (1-4): " -n 1 -r
+    echo
+    return $REPLY
+}
+
+# Function to test individual functions
+test_function() {
+    echo
+    log_info "Available functions to test:"
+    echo "1) check_ubuntu_version"
+    echo "2) install_java"
+    echo "3) install_scala" 
+    echo "4) install_sbt"
+    echo "5) install_python"
+    echo "6) install_docker"
+    echo "7) create_service_directories"
+    echo "8) check_env_health"
+    echo "9) init-mqtt-connector"
+    echo "10) init-s3-bucket"
+    echo
+    read -p "Select function to test (1-10): " -n 2 -r
+    echo
+    
+    case $REPLY in
+        1) check_ubuntu_version ;;
+        2) install_java ;;
+        3) install_scala ;;
+        4) install_sbt ;;
+        5) install_python ;;
+        6) install_docker ;;
+        7) create_service_directories ;;
+        8) check_env_health ;;
+        9) init-mqtt-connector ;;
+        10) init-s3-bucket ;;
+        *) log_error "Invalid function selection"; exit 1 ;;
+    esac
+}
+
 main() {
     log_info "Starting local development stack setup for Ubuntu 22.04+..."
     
-    # Handle cleanup option first
-    if [ "$1" = "cleanup" ] || [ "$1" = "--cleanup" ]; then
-        verify_working_directory
-        interactive_cleanup
-        exit 0
-    fi
+    # Handle command line arguments
+    case "${1:-}" in
+        "cleanup"|"--cleanup")
+            verify_working_directory
+            interactive_cleanup
+            exit 0
+            ;;
+        "setup"|"--setup")
+            OPTION="setup"
+            ;;
+        "test"|"--test")
+            verify_working_directory
+            if [ -n "${2:-}" ]; then
+                # Direct function call: ./script.sh test function_name
+                case "$2" in
+                    "check_ubuntu_version") check_ubuntu_version ;;
+                    "install_java") install_java ;;
+                    "install_scala") install_scala ;;
+                    "install_sbt") install_sbt ;;
+                    "install_python") install_python ;;
+                    "install_docker") install_docker ;;
+                    "create_service_directories") create_service_directories ;;
+                    "check_env_health") check_env_health ;;
+                    "init-mqtt-connector") init-mqtt-connector ;;
+                    "init-s3-bucket") init-s3-bucket ;;
+                    *) log_error "Unknown function: $2"; exit 1 ;;
+                esac
+            else
+                # Interactive function selection
+                test_function
+            fi
+            exit 0
+            ;;
+        "all"|"--all")
+            OPTION="all"
+            ;;
+        "")
+            # No argument provided, show interactive menu
+            show_menu
+            case $REPLY in
+                1) verify_working_directory; interactive_cleanup; exit 0 ;;
+                2) OPTION="setup" ;;
+                3) verify_working_directory; test_function; exit 0 ;;
+                4) OPTION="all" ;;
+                *) log_error "Invalid option. Exiting."; exit 1 ;;
+            esac
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            log_info "Usage: $0 [cleanup|setup|test [function_name]|all]"
+            log_info "Example: $0 test install_java"
+            exit 1
+            ;;
+    esac
 
     # Verify we're in the correct directory
     verify_working_directory
 
-    check_ubuntu_version
-    update_system
-    install_utilities
-    install_java
-    install_scala
-    install_sbt
-    install_python
-    install_docker
-    
-    # Source bashrc to get new PATH
-    source ~/.bashrc 2>/dev/null || true
-    
-    # Wait a moment for services to initialize
-    sleep 5
-    
-    create_service_directories
+    # Execute based on selected option
+    case $OPTION in
+        "setup")
+            log_info "Running complete setup..."
+            check_ubuntu_version
+            update_system
+            install_utilities
+            install_java
+            install_scala
+            install_sbt
+            install_python
+            install_docker
+            
+            source ~/.bashrc 2>/dev/null || true
+            sleep 5
+            
+            create_service_directories
+            check_docker_compose
+            
+            if check_env_health; then
+                build_and_run
+                log_success "Setup completed successfully!"
+            else
+                log_error "Setup completed with errors. Please check the output above."
+                exit 1
+            fi
+            ;;
+        "all")
+            log_info "Running full setup with initialization..."
+            check_ubuntu_version
+            update_system
+            install_utilities
+            install_java
+            install_scala
+            install_sbt
+            install_python
+            install_docker
+            
+            source ~/.bashrc 2>/dev/null || true
+            sleep 5
+            
+            create_service_directories
+            check_docker_compose
+            
+            if check_env_health; then
+                build_and_run
+                log_success "Setup completed successfully!"
+            else
+                log_error "Setup completed with errors. Please check the output above."
+                exit 1
+            fi
+            
+            # Initialize connectors and S3 bucket
+            log_info "Waiting for the environment to be fully up..."
+            sleep 10
+            log_info "Initializing Kafka Connect plugins and connectors..."
+            init-mqtt-connector
 
-    check_docker_compose
-    
-    if check_env_health; then
-        build_and_run
-        log_success "Setup completed successfully!"
-    else
-        log_error "Setup completed with errors. Please check the output above."
-        exit 1
-    fi
-    
-    # Wait a bit for Kafka Connect to be fully up
-    log_info "Waiting for the environment to be fully up..."
-    sleep 10
-    log_info "Initializing Kafka Connect plugins and connectors..."
-    init-mqtt-connector
+            log_info "Initializing s3 bucket..."
+            init-s3-bucket
 
-    log_info "Initializing s3 bucket..."
-    init-s3-bucket
-
-    log_success "All done! You can now start developing your applications."
+            log_success "All done! You can now start developing your applications."
+            ;;
+    esac
+    
     log_info "Note: If Docker commands fail, you may need to log out and back in"
 }
-
 # Run main function
 main "$@"

@@ -22,6 +22,7 @@
 # Exceptions (needed jars)
 !spark-apps/libs/*.jar
 
+*.gitignore
 # SBT specific
 target/
 project/project/

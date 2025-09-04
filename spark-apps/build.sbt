@@ -18,6 +18,8 @@ ThisBuild / scalacOptions ++= Seq(
   "-Ywarn-numeric-widen"
 )
 
+ThisBuild / javaOptions += "-Dsbt.background=false"
+
 ThisBuild / assemblyMergeStrategy := {
   // LOG4J PLUGIN FIX!
   case PathList(
