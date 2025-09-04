@@ -1,36 +1,66 @@
 ThisBuild / version := "1.0.0"
-ThisBuild / scalaVersion := "2.13.11"
+ThisBuild / scalaVersion := "2.13.16"
 ThisBuild / organization := "com.smartstar"
+
+val sparkVersion = "4.0.0"
+val isLocal = sys.env.getOrElse("ENV", "development") == "development"
+val sparkScope = if (isLocal) "compile" else "provided"
 
 // Global settings
 ThisBuild / scalacOptions ++= Seq(
-  "-encoding", "UTF-8",
+  "-encoding",
+  "UTF-8",
   "-deprecation",
-  "-unchecked", 
+  "-unchecked",
   "-feature",
   "-Xlint",
   "-Ywarn-dead-code",
   "-Ywarn-numeric-widen"
 )
 
-// Common dependencies
-lazy val commonDependencies = Seq(
-  // Spark
-  "org.apache.spark" %% "spark-core" % "3.5.0" % "provided",
-  "org.apache.spark" %% "spark-sql" % "3.5.0" % "provided",
-  "org.apache.spark" %% "spark-streaming" % "3.5.0" % "provided",
-  "org.apache.spark" %% "spark-mllib" % "3.5.0" % "provided",
-  
-  // Configuration
-  "com.typesafe" % "config" % "1.4.2",
-  
-  // Logging
-  "org.slf4j" % "slf4j-api" % "2.0.7",
-  "ch.qos.logback" % "logback-classic" % "1.4.8",
-  
-  // Testing
-  "org.scalatest" %% "scalatest" % "3.2.16" % Test,
-  "org.scalamock" %% "scalamock" % "5.2.0" % Test
+ThisBuild / javaOptions += "-Dsbt.background=false"
+
+ThisBuild / assemblyMergeStrategy := {
+  // LOG4J PLUGIN FIX!
+  case PathList(
+        "META-INF",
+        "org",
+        "apache",
+        "logging",
+        "log4j",
+        "core",
+        "config",
+        "plugins",
+        "Log4j2Plugins.dat"
+      ) =>
+    MergeStrategy.concat // Concatenate plugin files instead of failing
+
+  case x if x.endsWith("Log4j2Plugins.dat") =>
+    MergeStrategy.concat
+
+  // Rest of your merge strategy...
+  case PathList("META-INF", xs @ _*) =>
+    xs match {
+      case "MANIFEST.MF" :: Nil => MergeStrategy.discard
+      case "services" :: xs     => MergeStrategy.concat
+      case _                    => MergeStrategy.discard
+    }
+  case x => MergeStrategy.first
+}
+
+lazy val assemblySettings = Seq(
+  assembly / assemblyExcludedJars := {
+    val cp = (assembly / fullClasspath).value
+    cp filter { f =>
+      val name = f.data.getName.toLowerCase
+      name.startsWith("spark-") ||
+      name.startsWith("log4j-1.2-api")
+    }
+  }
+)
+
+Test / javaOptions ++= Seq(
+  "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
 )
 
 // Root project
@@ -41,11 +71,33 @@ lazy val root = (project in file("."))
     publish / skip := true
   )
 
+// Common dependencies
+lazy val commonDependencies = Seq(
+  // Spark
+  "org.apache.spark" %% "spark-core" % sparkVersion % sparkScope,
+  "org.apache.spark" %% "spark-sql" % sparkVersion % sparkScope,
+  "org.apache.spark" %% "spark-streaming" % sparkVersion % sparkScope,
+  "org.apache.spark" %% "spark-mllib" % sparkVersion % sparkScope,
+  // "org.apache.spark" %% "spark-connect-client-jvm" % sparkVersion,
+
+  // Configuration
+  "com.typesafe" % "config" % "1.4.4",
+
+  // Logging
+  "org.slf4j" % "slf4j-api" % "2.0.17",
+  "ch.qos.logback" % "logback-classic" % "1.5.18",
+
+  // Testing
+  "org.scalatest" %% "scalatest" % "3.2.19" % Test,
+  "org.scalamock" %% "scalamock" % "7.4.1" % Test
+)
+
 // Common module
 lazy val common = (project in file("modules/common"))
   .settings(
     name := "smartstar-common",
-    libraryDependencies ++= commonDependencies
+    libraryDependencies ++= commonDependencies,
+    assemblySettings
   )
 
 // Ingestion module
@@ -54,21 +106,24 @@ lazy val ingestion = (project in file("modules/ingestion"))
   .settings(
     name := "smartstar-ingestion",
     libraryDependencies ++= commonDependencies ++ Seq(
-      "org.apache.spark" %% "spark-streaming-kafka-0-10" % "3.5.0" % "provided",
-      "org.apache.kafka" % "kafka-clients" % "3.5.1",
-      "com.amazonaws" % "aws-java-sdk-s3" % "1.12.499"
-    )
+      "org.apache.spark" %% "spark-sql" % sparkVersion % sparkScope,
+      "org.apache.spark" %% "spark-sql-kafka-0-10" % sparkVersion % sparkScope,
+      "org.apache.hadoop" % "hadoop-aws" % "3.4.1",
+      "io.grpc" % "grpc-netty-shaded" % "1.75.0" // transport provider
+    ),
+    assemblySettings
   )
 
 // Normalization module
 lazy val normalization = (project in file("modules/normalization"))
   .dependsOn(common)
   .settings(
-    name := "smartstar-normalization", 
+    name := "smartstar-normalization",
     libraryDependencies ++= commonDependencies ++ Seq(
       "io.delta" %% "delta-core" % "2.4.0",
-      "org.apache.spark" %% "spark-avro" % "3.5.0" % "provided"
-    )
+      "org.apache.spark" %% "spark-avro" % "4.0.0" % sparkScope
+    ),
+    assemblySettings
   )
 
 // Analytics module
@@ -77,7 +132,13 @@ lazy val analytics = (project in file("modules/analytics"))
   .settings(
     name := "smartstar-analytics",
     libraryDependencies ++= commonDependencies ++ Seq(
-      "org.apache.spark" %% "spark-mllib" % "3.5.0" % "provided",
+      "org.apache.spark" %% "spark-mllib" % "4.0.0" % sparkScope,
       "com.github.fommil.netlib" % "all" % "1.1.2"
-    )
+    ),
+    assemblySettings
   )
+
+// Unmanaged jars
+Compile / unmanagedJars += file(
+  "lib/iceberg-spark-runtime-4.0_2.13-1.10.0-20250822.002003-111.jar"
+)

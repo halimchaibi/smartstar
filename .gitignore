@@ -19,13 +19,16 @@
 *.tar.gz
 *.rar
 
+# Exceptions (needed jars)
+!spark-apps/libs/*.jar
+
+*.gitignore
 # SBT specific
 target/
 project/project/
 project/target/
 .cache
 .history
-.lib/
 dist/*
 lib_managed/
 src_managed/
@@ -117,3 +120,19 @@ buildNumber.properties
 
 # Kubernetes secrets
 *.secret.yaml
+
+# Docker data
+kafka/data/*
+kafka/data/metadata/*
+kafka/logs/*
+kafka/metadata/*
+mosquitto/data/*
+mosquitto/logs/*
+postgres/data/*
+minio/data/*
+
+# Local files and dir
+note-books/*
+scripts/*
+.vscode
+.idea

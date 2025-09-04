@@ -1,70 +1,96 @@
 package com.smartstar.ingestion.streaming
 
-import com.smartstar.common.traits.{SparkJob, ConfigurableJob}
-import com.smartstar.common.config.AppConfig
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.streaming.Trigger
+import com.smartstar.common.config.{AppConfig, ConfigurationFactory}
+import com.smartstar.common.traits.{ConfigurableJob, Environment, EnvironmentAwareSparkJob, Module}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-class KafkaStreamingJob extends SparkJob with ConfigurableJob {
-  
-  override def appName: String = "SmartStar-Kafka-Streaming"
-  override def config: AppConfig = AppConfig.load()
-  
+class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
+
+  override def appName: String = s"${config.appName}-KafkaStreamingJob"
+
+  override def config: AppConfig =
+    ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Ingestion)
+
+
+  // Customize configurations per job
+  override def additionalSparkConfigs: Map[String, String] = Map(
+    "spark.sql.sources.parallelPartitionDiscovery.threshold" -> "32",
+    "spark.sql.files.maxPartitionBytes" -> "134217728" // 128MB
+  )
+
   override def run(args: Array[String]): Unit = {
+
     validateConfig()
-    
-    logInfo(s"Starting $appName")
-    
-    // Parse arguments
-    val topic = args.headOption.getOrElse("smartstar-events")
-    val outputPath = args.lift(1).getOrElse("data/streaming-output/")
-    val checkpointLocation = args.lift(2).getOrElse("/tmp/kafka-checkpoint")
-    
+
+    logInfo(s"Running in environment: ${config.environment.name}")
+    logInfo(s"Module: ${config.module.name}")
+    // Access Spark-specific configuration
+    logInfo(s"Spark master: ${config.rawConfig.getString("spark.master")}")
+    logInfo(s"Executor memory: ${config.rawConfig.getString("spark.executor.memory")}")
+
     // Read from Kafka
-    val kafkaDF = readFromKafka(topic)
-    
+    val kafkaDF = readFromKafka()
+
     // Process stream
     val processedDF = processStream(kafkaDF)
-    
+
     // Write stream
-    val query = writeStream(processedDF, outputPath, checkpointLocation)
-    
+    val query = writeStream(processedDF)
+
     // Wait for termination
     query.awaitTermination()
   }
-  
-  private def readFromKafka(topic: String): DataFrame = {
-    logInfo(s"Reading from Kafka topic: $topic")
+
+  private def readFromKafka(): DataFrame = {
+    val topics = getString("kafka.topics")
+    val kafkaBootstrapServers = getString("kafka.bootstrap-servers")
     
+    logInfo(s"Reading from Kafka topic: $topics")
+
     spark.readStream
       .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:9092")
-      .option("subscribe", topic)
+      .option("kafka.bootstrap.servers", kafkaBootstrapServers)
+      .option("subscribe", topics)
       .option("startingOffsets", "latest")
       .load()
   }
-  
+
   private def processStream(df: DataFrame): DataFrame = {
     logInfo("Processing Kafka stream")
-    
-    df.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)", "timestamp")
-      .withColumn("processed_at", current_timestamp())
-      .withColumn("date_partition", date_format(col("timestamp"), "yyyy-MM-dd"))
+
+    val bronzeRaw = df
+      .selectExpr("CAST(value AS STRING) as value", "topic", "partition", "offset", "timestamp")
+      .withColumn("topic", col("topic"))
+      .withColumn("partition", col("partition"))
+      .withColumn("offset", col("offset"))
+      .withColumn("kafka_timestamp", col("timestamp"))
+      .withColumn("ingestion_ts", current_timestamp())
+
+    bronzeRaw
+      .withColumn("event_time", to_timestamp(get_json_object(col("value"), "$.timestamp")))
+      .withColumn("year", year(col("event_time")))
+      .withColumn("month", month(col("event_time")))
+      .withColumn("day", dayofmonth(col("event_time")))
   }
-  
-  private def writeStream(df: DataFrame, outputPath: String, checkpointLocation: String) = {
-    logInfo(s"Writing stream to $outputPath")
-    
+
+  private def writeStream(df: DataFrame) = {
+
+    val output = getString("storage.datalake.output")
+    val checkpoint = getString("kafka.checkpoint-location")
+    logInfo(s"Writing stream to $output")
+
     df.writeStream
+      .format("json")
+      .option("path", output)
+      .option("checkpointLocation", checkpoint)
+      .partitionBy("topic", "year", "month", "day")
       .outputMode("append")
-      .format("parquet")
-      .option("path", outputPath)
-      .option("checkpointLocation", checkpointLocation)
-      .partitionBy("date_partition")
-      .trigger(Trigger.ProcessingTime("30 seconds"))
       .start()
   }
+
+  private def getString(path: String): String = config.rawConfig getString(path)
+
 }
 
 object KafkaStreamingJob {
@@ -73,7 +99,13 @@ object KafkaStreamingJob {
     try {
       job.run(args)
     } finally {
-      job.close()
+      // Close resources and stop Spark session
+      try {
+        job.close()
+      } catch {
+        case ex: Exception =>
+          println(s"Warning: Error while closing job resources: ${ex.getMessage}")
+      }
     }
   }
 }
