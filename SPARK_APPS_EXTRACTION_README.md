@@ -61,6 +61,8 @@ The repository is located at: `/home/runner/work/smartstar/smartstar/spark-apps-
 
 ## Next steps to push to GitHub:
 
+The repository is ready in `/home/runner/work/smartstar/smartstar/spark-apps-standalone/` with a clean git history.
+
 1. **Create new GitHub repository**:
    ```bash
    # Option 1: Via GitHub CLI (if available)
@@ -69,8 +71,9 @@ The repository is located at: `/home/runner/work/smartstar/smartstar/spark-apps-
    # Option 2: Via GitHub web interface
    # Go to https://github.com/new
    # Repository name: spark-apps
-   # Owner: halimchaibi
+   # Owner: halimchaibi  
    # Description: "Spark applications for data analytics, ingestion, and normalization"
+   # Make sure to create it as an empty repository (no README, .gitignore, or license)
    ```
 
 2. **Push the repository**:
@@ -79,6 +82,8 @@ The repository is located at: `/home/runner/work/smartstar/smartstar/spark-apps-
    git remote add origin https://github.com/halimchaibi/spark-apps.git
    git push -u origin main
    ```
+
+The repository is fully initialized with git and contains the "Initial draft" commit as requested.
 
 ## Alternative repository names (if preferred):
 - `smartstar-spark-apps`
