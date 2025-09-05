@@ -20,19 +20,41 @@ cd "$DOCKER_DIR" || {
 # CONFIGURATION VARIABLES - Modify these as needed
 # ==============================================================================
 
+# Version configurations
 CONNECTOR_VERSION="${CONNECTOR_VERSION:-10.0.0}"
-STREAM_REACTOR_BASE_URL="${STREAM_REACTOR_BASE_URL:-https://github.com/lensesio/stream-reactor/releases/download}"
-COURSIER_DOWNLOAD_URL="${COURSIER_DOWNLOAD_URL:-https://github.com/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz}"
-DOCKER_GPG_URL="${DOCKER_GPG_URL:-https://download.docker.com/linux/ubuntu/gpg}"
-DOCKER_REPO_URL="${DOCKER_REPO_URL:-https://download.docker.com/linux/ubuntu}"
-DOCKER_COMPOSE_RELEASES_URL="${DOCKER_COMPOSE_RELEASES_URL:-https://api.github.com/repos/docker/compose/releases/latest}"
-DOCKER_COMPOSE_DOWNLOAD_URL="${DOCKER_COMPOSE_DOWNLOAD_URL:-https://github.com/docker/compose/releases/download}"
-MINIO_CLIENT_URL="${MINIO_CLIENT_URL:-https://dl.min.io/client/mc/release/linux-amd64/mc}"
-SBT_KEYSERVER_URL="${SBT_KEYSERVER_URL:-https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823}"
 
-# SBT Repository URLs
-SBT_REPO_MAIN="${SBT_REPO_MAIN:-https://repo.scala-sbt.org/scalasbt/debian all main}"
-SBT_REPO_OLD="${SBT_REPO_OLD:-https://repo.scala-sbt.org/scalasbt/debian /}"
+# GitHub and external service URLs
+GITHUB_BASE_URL="${GITHUB_BASE_URL:-https://github.com}"
+STREAM_REACTOR_BASE_URL="${STREAM_REACTOR_BASE_URL:-${GITHUB_BASE_URL}/lensesio/stream-reactor/releases/download}"
+COURSIER_DOWNLOAD_URL="${COURSIER_DOWNLOAD_URL:-${GITHUB_BASE_URL}/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz}"
+DOCKER_COMPOSE_RELEASES_URL="${DOCKER_COMPOSE_RELEASES_URL:-https://api.github.com/repos/docker/compose/releases/latest}"
+DOCKER_COMPOSE_DOWNLOAD_URL="${DOCKER_COMPOSE_DOWNLOAD_URL:-${GITHUB_BASE_URL}/docker/compose/releases/download}"
+
+# Docker repository URLs
+DOCKER_DOWNLOAD_BASE="${DOCKER_DOWNLOAD_BASE:-https://download.docker.com/linux/ubuntu}"
+DOCKER_GPG_URL="${DOCKER_GPG_URL:-${DOCKER_DOWNLOAD_BASE}/gpg}"
+DOCKER_REPO_URL="${DOCKER_REPO_URL:-${DOCKER_DOWNLOAD_BASE}}"
+
+# MinIO URLs
+MINIO_BASE_URL="${MINIO_BASE_URL:-https://dl.min.io}"
+MINIO_CLIENT_URL="${MINIO_CLIENT_URL:-${MINIO_BASE_URL}/client/mc/release/linux-amd64/mc}"
+
+# SBT and Scala repository URLs
+SBT_KEYSERVER_BASE="${SBT_KEYSERVER_BASE:-https://keyserver.ubuntu.com}"
+SBT_KEYSERVER_URL="${SBT_KEYSERVER_URL:-${SBT_KEYSERVER_BASE}/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823}"
+SBT_REPO_BASE="${SBT_REPO_BASE:-https://repo.scala-sbt.org/scalasbt/debian}"
+SBT_REPO_MAIN="${SBT_REPO_MAIN:-${SBT_REPO_BASE} all main}"
+SBT_REPO_OLD="${SBT_REPO_OLD:-${SBT_REPO_BASE} /}"
+
+# Service endpoint configurations
+LOCALHOST_BASE="${LOCALHOST_BASE:-localhost}"
+KAFKA_CONNECT_URL="${KAFKA_CONNECT_URL:-http://${LOCALHOST_BASE}:8083}"
+KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-${LOCALHOST_BASE}:9092}"
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://${LOCALHOST_BASE}:9000}"
+MINIO_HEALTH_URL="${MINIO_HEALTH_URL:-http://${LOCALHOST_BASE}:9000/minio/health/live}"
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
+BUCKET_NAME="${BUCKET_NAME:-smartstar}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -40,11 +62,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
-
-MINIO_ENDPOINT="http://localhost:9000"
-MINIO_ACCESS_KEY="minioadmin"
-MINIO_SECRET_KEY="minioadmin"
-BUCKET_NAME="smartstar"
 
 # Logging functions
 log_info() {
@@ -87,8 +104,8 @@ check_ubuntu_version() {
     fi
     
     VERSION=$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)
-    MAJOR_VERSION=$(echo $VERSION | cut -d '.' -f 1)
-    MINOR_VERSION=$(echo $VERSION | cut -d '.' -f 2)
+    MAJOR_VERSION=$(echo "$VERSION" | cut -d '.' -f 1)
+    MINOR_VERSION=$(echo "$VERSION" | cut -d '.' -f 2)
     
     if [ "$MAJOR_VERSION" -lt 22 ] || ([ "$MAJOR_VERSION" -eq 20 ] && [ "$MINOR_VERSION" -lt 4 ]); then
         log_error "Ubuntu $VERSION detected. This script requires Ubuntu 22.04+"
@@ -128,11 +145,11 @@ cleanup_environment() {
     log_info "Stopping any remaining containers..."
     RUNNING_CONTAINERS=$(docker ps -q 2>/dev/null || sg docker -c "docker ps -q" 2>/dev/null || sudo docker ps -q 2>/dev/null)
     if [ -n "$RUNNING_CONTAINERS" ]; then
-        if docker stop $RUNNING_CONTAINERS 2>/dev/null; then
+        if docker stop "$RUNNING_CONTAINERS" 2>/dev/null; then
             log_info "Stopped running containers"
         elif sg docker -c "docker stop $RUNNING_CONTAINERS" 2>/dev/null; then
             log_info "Stopped running containers with sg docker"
-        elif sudo docker stop $RUNNING_CONTAINERS 2>/dev/null; then
+        elif sudo docker stop "$RUNNING_CONTAINERS" 2>/dev/null; then
             log_info "Stopped running containers with sudo"
         fi
     fi
@@ -211,10 +228,10 @@ cleanup_environment() {
     PORTS="1883 5432 8080 8083 9000 9001 9092 9093 9094"
     
     for port in $PORTS; do
-        PID=$(sudo lsof -ti :$port 2>/dev/null)
+        PID=$(sudo lsof -ti ":$port" 2>/dev/null)
         if [ -n "$PID" ]; then
             log_info "Killing process $PID using port $port"
-            sudo kill -9 $PID 2>/dev/null || true
+            sudo kill -9 "$PID" 2>/dev/null || true
         fi
     done
     
@@ -227,7 +244,12 @@ cleanup_environment() {
     
     # Show remaining directory structure
     log_info "Remaining directory structure:"
-    ls -la . | grep -E "mosquitto|kafka|minio|postgres" || log_info "All service directories removed"
+    # Use glob pattern instead of ls | grep for better file handling
+    if ls -d ./mosquitto ./kafka ./minio ./postgres 2>/dev/null; then
+        log_info "Some service directories still exist"
+    else
+        log_info "All service directories removed"
+    fi
     
     log_success "Environment cleanup completed!"
     log_info "You can now run the setup script again with a clean environment"
@@ -235,6 +257,23 @@ cleanup_environment() {
 
 # Interactive cleanup function
 interactive_cleanup() {
+    log_warning "This will completely remove all Docker containers, volumes, and service data!"
+    echo -n "Are you sure you want to proceed? (y/N): "
+    read -r response
+    
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            cleanup_environment
+            ;;
+        *)
+            log_info "Cleanup cancelled"
+            ;;
+    esac
+}
+
+# Legacy main function - removed to avoid conflicts
+
+cleanup() {
     echo
     log_warning "This will:"
     log_warning "   • Stop and remove ALL Docker containers"
@@ -281,7 +320,7 @@ install_scala() {
     fi
     
     # Install coursier
-    curl -fL https://github.com/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz | gzip -d > cs
+    curl -fL "$COURSIER_DOWNLOAD_URL" | gzip -d > cs
     chmod +x cs
     sudo mv cs /usr/local/bin/
     
@@ -304,9 +343,9 @@ install_sbt() {
         return
     fi
     
-    echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-    echo "deb https://repo.scala-sbt.org/scalasbt/debian /" | sudo tee /etc/apt/sources.list.d/sbt_old.list
-    curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/sbt.gpg > /dev/null
+    echo "deb $SBT_REPO_MAIN" | sudo tee /etc/apt/sources.list.d/sbt.list
+    echo "deb $SBT_REPO_OLD" | sudo tee /etc/apt/sources.list.d/sbt_old.list
+    curl -sL "$SBT_KEYSERVER_URL" | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/sbt.gpg > /dev/null
     sudo apt update
     sudo apt install -y sbt
     
@@ -326,10 +365,11 @@ install_python() {
     
     log_success "Python 3 installed"
 }
+
 download-mqtt-kafka-connector() {
     log_info "Downloading Kafka Connect MQTT Connector..."
     CONNECTOR_VERSION="10.0.0"
-    DOWNLOAD_URL="https://github.com/lensesio/stream-reactor/releases/download/${CONNECTOR_VERSION}/kafka-connect-mqtt-${CONNECTOR_VERSION}.zip"
+    DOWNLOAD_URL="${STREAM_REACTOR_BASE_URL}/${CONNECTOR_VERSION}/kafka-connect-mqtt-${CONNECTOR_VERSION}.zip"
     TEMP_DIR="/tmp/kafka-connect-mqtt-$$"
     LIBS_DIR="../libs"
 
@@ -587,18 +627,18 @@ install_docker() {
     
     # Add Docker's official GPG key
     sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL "$DOCKER_GPG_URL" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     
     # Set up repository
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $DOCKER_REPO_URL $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
     
     # Install Docker
     sudo apt update
     sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
     
     # Install standalone docker-compose
-    DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
-    sudo curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    DOCKER_COMPOSE_VERSION=$(curl -s "$DOCKER_COMPOSE_RELEASES_URL" | grep 'tag_name' | cut -d\" -f4)
+    sudo curl -L "${DOCKER_COMPOSE_DOWNLOAD_URL}/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     sudo chmod +x /usr/local/bin/docker-compose
     
     # Add user to docker group
@@ -667,7 +707,7 @@ install_utilities() {
     # Install MinIO client if not present
     if ! command -v mc > /dev/null 2>&1; then
         log_info "Installing MinIO client (mc)..."
-        curl -O https://dl.min.io/client/mc/release/linux-amd64/mc
+        curl -O "$MINIO_CLIENT_URL"
         chmod +x mc
         sudo mv mc /usr/local/bin/
         log_success "MinIO client installed"
@@ -814,7 +854,6 @@ build_and_run() {
 }
 
 init-mqtt-connector() {
-    KAFKA_CONNECT_URL="http://localhost:8083"
     CONNECTOR_NAME="mqtt-source-wildcard"
 
     echo "Creating MQTT Source Connector..."
@@ -876,7 +915,7 @@ init-s3-bucket() {
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
-        if curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/minio/health/live | grep -q "200"; then
+        if curl -s -o /dev/null -w "%{http_code}" "$MINIO_HEALTH_URL" | grep -q "200"; then
             log_success "MinIO is ready"
             break
         else
@@ -893,7 +932,7 @@ init-s3-bucket() {
 
     # Create bucket if it doesn't exist
     if ! mc alias list | grep -q "local"; then
-        mc alias set local http://localhost:9000 minioadmin minioadmin
+        mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
     fi
 
     if ! mc ls local/$BUCKET_NAME >/dev/null 2>&1; then
@@ -909,7 +948,7 @@ init-s3-bucket() {
 create_kafka_topics() {
     log_info "Creating Kafka topics..."
     kafka_container="smartstar-kafka-broker"
-    local bootstrap_servers="localhost:9092"
+    local bootstrap_servers="$KAFKA_BOOTSTRAP_SERVERS"
     local max_attempts=30
     local attempt=1
     
@@ -935,6 +974,7 @@ create_kafka_topics() {
     local topics=(
         "sensors.temperature:3:1"
         "sensors.air_quality:3:1"
+        "sensors.motion:3:1"
     )
     
     # Create each topic
@@ -1072,7 +1112,15 @@ main() {
             ;;
         "")
             # No argument provided, show interactive menu
-            show_menu
+            echo
+            log_info "Local Development Stack Setup - Choose an option:"
+            echo "1) cleanup   - Clean up all containers, volumes, and data directories"
+            echo "2) setup     - Run complete setup (install dependencies + start services)"
+            echo "3) test      - Run a single function for testing"
+            echo "4) all       - Run everything (setup + initialize connectors + S3 bucket)"
+            echo
+            read -p "Select option (1-4): " -n 1 -r
+            echo
             case $REPLY in
                 1) verify_working_directory; interactive_cleanup; exit 0 ;;
                 2) OPTION="setup" ;;
@@ -1148,17 +1196,18 @@ main() {
             # Initialize connectors and S3 bucket
             log_info "Waiting for the environment to be fully up..."
             sleep 5
-            log_info "Initializing Kafka Connect plugins and connectors..."
+            log_info "Configure Kafka Connect plugins and connectors..."
             init-mqtt-connector
+            log_info "Create Kafka topics ..."
             create_kafka_topics
-            log_info "Initializing s3 bucket..."
+            log_info "Create s3 bucket..."
             init-s3-bucket
 
             log_success "All done! You can now start developing your applications."
             ;;
     esac
     
-    log_info "Note: If Docker commands fail, you may need to log out and back in"
+    log_info "Note: If Docker commands fail, you may need to log out and back in, restart the script"
 }
 # Run main function
 main "$@"
