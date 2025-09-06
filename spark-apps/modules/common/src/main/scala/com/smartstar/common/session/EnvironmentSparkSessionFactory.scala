@@ -1,14 +1,18 @@
 package com.smartstar.common.session
 
-import org.apache.spark.sql.SparkSession
-import com.typesafe.config.Config
 import com.smartstar.common.config.AppConfig
 import com.smartstar.common.utils.LoggingUtils
+import com.typesafe.config.Config
+import org.apache.spark.sql.SparkSession
+
 import scala.jdk.CollectionConverters._
 
 object EnvironmentSparkSessionFactory extends LoggingUtils {
 
-  def createSession(config: AppConfig): SparkSession = {
+  def createSession(
+                     config: AppConfig,
+                     additionalSparkConfigs: Map[String, String] = Map.empty
+                   ): SparkSession = {
     val appName = config.appName
     val environment = config.environment
 
@@ -18,19 +22,39 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
       .builder()
       .master(config.rawConfig.getString("spark.master"))
       .appName(appName)
-
     // Extract all spark configurations
     val allSparkConfigs = extractAllSparkConfigs(config.rawConfig)
-    
+
     // Apply all configurations
     allSparkConfigs.foreach { case (key, value) =>
       logDebug(s"Setting Spark config: $key = $value")
       builder.config(key, value)
     }
 
+    applyAdditionalConfigs(builder, additionalSparkConfigs)
+
     val session = builder.getOrCreate()
     logSessionInfo(session, environment.name, allSparkConfigs.size)
     session
+  }
+
+  private def applyAdditionalConfigs(
+                                      builder: SparkSession.Builder,
+                                      additionalSparkConfigs: Map[String, String] = Map.empty
+                                    ): SparkSession.Builder = {
+    if (additionalSparkConfigs.nonEmpty) {
+      logInfo(s"Applying additional Spark configs: ${additionalSparkConfigs.size} entries")
+      additionalSparkConfigs.foreach { case (key, value) =>
+        logInfo(s"Additional config: $key = $value")
+      }
+
+      additionalSparkConfigs.foldLeft(builder) {
+        case (b, (key, value)) => b.config(key, value)
+      }
+    } else {
+      logDebug("No additional Spark configs to apply")
+      builder
+    }
   }
 
   /**
@@ -45,7 +69,7 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
       allConfigs ++= flattenConfigWithPrefix(config.getConfig("spark.executor"), "spark.executor")
     }
 
-    // Extract driver configs  
+    // Extract driver configs
     if (config.hasPath("spark.driver")) {
       allConfigs ++= flattenConfigWithPrefix(config.getConfig("spark.driver"), "spark.driver")
     }
@@ -57,7 +81,7 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
       allConfigs ++= sqlConfigs.map { case (key, value) =>
         key match {
           case "spark.sql.shuffle-partitions" => "spark.sql.shuffle.partitions" -> value
-          case "spark.sql.adaptive.advisory-partition-size" => 
+          case "spark.sql.adaptive.advisory-partition-size" =>
             "spark.sql.adaptive.advisoryPartitionSizeInBytes" -> parseSize(value)
           case _ => key -> value
         }
@@ -84,7 +108,7 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
       allConfigs ++= dynamicConfigs.map { case (key, value) =>
         key match {
           case "spark.dynamicAllocation.min-executors" => "spark.dynamicAllocation.minExecutors" -> value
-          case "spark.dynamicAllocation.max-executors" => "spark.dynamicAllocation.maxExecutors" -> value  
+          case "spark.dynamicAllocation.max-executors" => "spark.dynamicAllocation.maxExecutors" -> value
           case "spark.dynamicAllocation.initial-executors" => "spark.dynamicAllocation.initialExecutors" -> value
           case _ => key -> value
         }
@@ -114,7 +138,7 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
       // Handle arrays properly for JARs
       allConfigs ++= jarConfigs.flatMap { case (key, value) =>
         key match {
-          case "spark.jars.packages" => 
+          case "spark.jars.packages" =>
             if (value.nonEmpty && value != "[]") Some(key -> value)
             else None
           case "spark.jars.lib" =>
@@ -176,7 +200,7 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
     if (config.hasPath("spark")) {
       val sparkConfig = config.getConfig("spark")
       val flatConfigs = flattenConfigWithPrefix(sparkConfig, "spark")
-      
+
       // Apply any necessary key transformations
       flatConfigs.map { case (key, value) =>
         val transformedKey = transformConfigKey(key)
@@ -199,21 +223,21 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
       // SQL transformations
       case "spark.sql.shuffle-partitions" => "spark.sql.shuffle.partitions"
       case k if k.contains("advisory-partition-size") => k.replace("advisory-partition-size", "advisoryPartitionSizeInBytes")
-      
-      // UI transformations  
+
+      // UI transformations
       case "spark.ui.retain-tasks" => "spark.ui.retainedTasks"
       case "spark.ui.retain-stages" => "spark.ui.retainedStages"
-      
+
       // Dynamic allocation transformations
-      case k if k.startsWith("spark.dynamic-allocation") => 
+      case k if k.startsWith("spark.dynamic-allocation") =>
         k.replace("dynamic-allocation", "dynamicAllocation")
-         .replace("min-executors", "minExecutors")
-         .replace("max-executors", "maxExecutors")
-         .replace("initial-executors", "initialExecutors")
-      
+          .replace("min-executors", "minExecutors")
+          .replace("max-executors", "maxExecutors")
+          .replace("initial-executors", "initialExecutors")
+
       // Debug transformations
       case "spark.debug.max-to-string-fields" => "spark.debug.maxToStringFields"
-      
+
       // Default: no transformation
       case _ => key
     }
@@ -245,7 +269,7 @@ object EnvironmentSparkSessionFactory extends LoggingUtils {
         size // Assume it's already in bytes
       }
     } catch {
-      case _: NumberFormatException => 
+      case _: NumberFormatException =>
         logWarn(s"Could not parse size: $sizeStr, using as-is")
         size
     }

@@ -53,8 +53,9 @@ lazy val assemblySettings = Seq(
     val cp = (assembly / fullClasspath).value
     cp filter { f =>
       val name = f.data.getName.toLowerCase
-      name.startsWith("spark-") ||
-      name.startsWith("log4j-1.2-api")
+      (
+        name.startsWith("log4j-1.2-api") && !name.contains("iceberg")
+      )
     }
   }
 )
@@ -78,6 +79,7 @@ lazy val commonDependencies = Seq(
   "org.apache.spark" %% "spark-sql" % sparkVersion % sparkScope,
   "org.apache.spark" %% "spark-streaming" % sparkVersion % sparkScope,
   "org.apache.spark" %% "spark-mllib" % sparkVersion % sparkScope,
+  "org.apache.hadoop" % "hadoop-aws" % "3.4.1",
   // "org.apache.spark" %% "spark-connect-client-jvm" % sparkVersion,
 
   // Configuration
@@ -108,7 +110,6 @@ lazy val ingestion = (project in file("modules/ingestion"))
     libraryDependencies ++= commonDependencies ++ Seq(
       "org.apache.spark" %% "spark-sql" % sparkVersion % sparkScope,
       "org.apache.spark" %% "spark-sql-kafka-0-10" % sparkVersion % sparkScope,
-      "org.apache.hadoop" % "hadoop-aws" % "3.4.1",
       "io.grpc" % "grpc-netty-shaded" % "1.75.0" // transport provider
     ),
     assemblySettings
@@ -120,8 +121,9 @@ lazy val normalization = (project in file("modules/normalization"))
   .settings(
     name := "smartstar-normalization",
     libraryDependencies ++= commonDependencies ++ Seq(
-      "io.delta" %% "delta-core" % "2.4.0",
-      "org.apache.spark" %% "spark-avro" % "4.0.0" % sparkScope
+      "org.apache.hadoop" % "hadoop-aws" % "3.4.1",
+      "org.apache.spark" %% "spark-avro" % "4.0.0" % sparkScope,
+      "org.postgresql" % "postgresql" % "42.7.3"
     ),
     assemblySettings
   )
@@ -138,7 +140,4 @@ lazy val analytics = (project in file("modules/analytics"))
     assemblySettings
   )
 
-// Unmanaged jars
-Compile / unmanagedJars += file(
-  "lib/iceberg-spark-runtime-4.0_2.13-1.10.0-20250822.002003-111.jar"
-)
+

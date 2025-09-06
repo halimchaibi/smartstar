@@ -9,8 +9,9 @@ class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
 
   override def appName: String = s"${config.appName}-KafkaStreamingJob"
 
+
   override def config: AppConfig =
-    ConfigurationFactory.forEnvironmentAndModule(Environment.Development, Module.Ingestion)
+    ConfigurationFactory.forEnvironmentAndModule(Environment.detect(), Module.Ingestion)
 
 
   // Customize configurations per job
@@ -89,7 +90,7 @@ class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
       .start()
   }
 
-  private def getString(path: String): String = config.rawConfig getString(path)
+  private def getString(path: String): String = config.rawConfig getString path
 
 }
 

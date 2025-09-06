@@ -63,6 +63,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+MINIO_ENDPOINT="http://localhost:9000"
+MINIO_ACCESS_KEY="minioadmin"
+MINIO_SECRET_KEY="minioadmin"
+BUCKET_NAME="smartstar"
+
 # Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -260,7 +265,7 @@ interactive_cleanup() {
     log_warning "This will completely remove all Docker containers, volumes, and service data!"
     echo -n "Are you sure you want to proceed? (y/N): "
     read -r response
-    
+
     case "$response" in
         [yY][eE][sS]|[yY])
             cleanup_environment
@@ -365,6 +370,29 @@ install_python() {
     
     log_success "Python 3 installed"
 }
+install_awscli_v2() {
+  echo ">>> Removing any old AWS CLI v1 from apt..."
+  if dpkg -l | grep -q awscli; then
+    sudo apt remove -y awscli
+  else
+    echo "No apt-based awscli found, skipping removal."
+  fi
+
+  echo ">>> Downloading AWS CLI v2 installer..."
+  curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+
+  echo ">>> Unzipping installer..."
+  unzip -qq awscliv2.zip &
+
+  echo ">>> Installing AWS CLI v2..."
+  sudo ./aws/install --update
+
+  echo ">>> Cleaning up temporary files..."
+  rm -rf awscliv2.zip aws/
+
+  echo ">>> Checking installed version..."
+  aws --version
+}
 
 download-mqtt-kafka-connector() {
     log_info "Downloading Kafka Connect MQTT Connector..."
@@ -444,7 +472,7 @@ download-mqtt-kafka-connector() {
         log_info "Contents of $LIBS_DIR:"
         ls -la "$LIBS_DIR"
     fi
-}    
+}
 
 # Create required directories for Docker services
 create_service_directories() {
@@ -712,7 +740,8 @@ install_utilities() {
         sudo mv mc /usr/local/bin/
         log_success "MinIO client installed"
     fi
-   
+    # Install AWS CLI v2
+    install_awscli_v2
     log_success "Utilities installed"
 }   
 
@@ -951,7 +980,7 @@ create_kafka_topics() {
     local bootstrap_servers="$KAFKA_BOOTSTRAP_SERVERS"
     local max_attempts=30
     local attempt=1
-    
+
     # Wait for Kafka to be ready
     log_info "Waiting for Kafka to be ready..."
     while [ $attempt -le $max_attempts ]; do
@@ -964,25 +993,25 @@ create_kafka_topics() {
             attempt=$((attempt + 1))
         fi
     done
-    
+
     if [ $attempt -gt $max_attempts ]; then
         log_error "Kafka did not become ready within timeout"
         return 1
     fi
-    
+
     # Define topics to create
     local topics=(
         "sensors.temperature:3:1"
         "sensors.air_quality:3:1"
         "sensors.motion:3:1"
     )
-    
+
     # Create each topic
     for topic_config in "${topics[@]}"; do
         IFS=':' read -r topic_name partitions replication <<< "$topic_config"
-        
+
         log_info "Creating topic: $topic_name (partitions=$partitions, replication=$replication)"
-        
+
         if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh \
             --bootstrap-server $bootstrap_servers \
             --create \
@@ -995,7 +1024,7 @@ create_kafka_topics() {
             log_warning "Topic '$topic_name' might already exist or creation failed"
         fi
     done
-    
+
     # List all topics to verify
     log_info "Current Kafka topics:"
     if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh --bootstrap-server $bootstrap_servers --list; then
@@ -1004,7 +1033,7 @@ create_kafka_topics() {
         log_error "Failed to list Kafka topics"
         return 1
     fi
-    
+
     # Optional: Show topic details
     log_info "Topic details:"
     for topic_config in "${topics[@]}"; do
@@ -1018,6 +1047,41 @@ create_kafka_topics() {
     done
 }
 
+build_and_push_iceberg_runtime() {
+  local SPARK_VERSION="4.0"                   # adjust to your Spark minor version (3.4, 3.5…)
+  local SCALA_VERSION="2.13"                  # Scala version
+  local ICEBERG_BRANCH="main"                 # branch or tag, e.g. release-1.10.0
+  local WORKDIR="/tmp/iceberg-build"          # temporary build location
+  local S3_BUCKET="s3://smartstar/"       # replace with your bucket
+  local ICEBERG_RELEASE="1.10.0-rc4"
+  local ARTIFACT_NAME="iceberg-spark-runtime-${SPARK_VERSION}_${SCALA_VERSION}-1.11.0-SNAPSHOT.jar"
+  local S3_ENDPOINT="http://localhost:9000"
+
+  echo ">>> Cloning Iceberg repo..."
+  rm -rf "$WORKDIR"
+  git clone --branch "$ICEBERG_BRANCH" https://github.com/apache/iceberg.git "$WORKDIR"
+
+  cd "$WORKDIR" || exit 1
+
+  git checkout -b apache-iceberg-${ICEBERG_RELEASE}
+
+  echo ">>> Building Spark runtime for Spark ${SPARK_VERSION} and Scala ${SCALA_VERSION}..."
+  #./gradlew spotlessApply
+  ./gradlew :iceberg-spark:iceberg-spark-runtime-4.0_2.13:assemble -x test
+  ./gradlew :iceberg-spark:iceberg-spark-runtime-4.0_2.13:publishToMavenLocal -x test
+
+  local JAR_PATH="spark/v${SPARK_VERSION}/spark-runtime/build/libs/${ARTIFACT_NAME}"
+
+  if [[ ! -f "$JAR_PATH" ]]; then
+    echo "Build failed: $JAR_PATH not found"
+    exit 1
+  fi
+
+  echo ">>> Uploading $ARTIFACT_NAME to $S3_BUCKET ..."
+  aws s3 cp "$JAR_PATH" "$S3_BUCKET/libs/$ARTIFACT_NAME" --acl --endpoint $S3_ENDPOINT bucket-owner-full-control
+
+  echo ">>> Done. Artifact available at $S3_BUCKET/$ARTIFACT_NAME"
+}
 # Interactive menu function
 show_menu() {
     echo
@@ -1048,8 +1112,9 @@ test_function() {
     echo "10) init-s3-bucket"
     echo "11) download-mqtt-kafka-connector"
     echo "12) create_kafka_topics"
-    echo
-    read -p "Select function to test (1-10): " -n 2 -r
+    echo "13) build_and_push_iceberg_runtime"
+    echo "14) install_utilities"
+    read -p "Select function to test (1-14): " -n 2 -r
     echo
     
     case $REPLY in
@@ -1065,6 +1130,8 @@ test_function() {
         10) init-s3-bucket ;;
         11) download-mqtt-kafka-connector ;;
         12) create_kafka_topics ;;
+        13) build_and_push_iceberg_runtime ;;
+        14) install_utilities ;;
         *) log_error "Invalid function selection"; exit 1 ;;
     esac
 }
@@ -1099,6 +1166,8 @@ main() {
                     "init-s3-bucket") init-s3-bucket ;;
                     "download-mqtt-kafka-connector") download-mqtt-kafka-connector ;;
                     "create_kafka_topics") create_kafka_topics ;;
+                    "build_and_push_iceberg_runtime") build_and_push_iceberg_runtime ;;
+                    "install_utilities") install_utilities;;
                     *) log_error "Unknown function: $2"; exit 1 ;;
                 esac
             else
@@ -1202,7 +1271,8 @@ main() {
             create_kafka_topics
             log_info "Create s3 bucket..."
             init-s3-bucket
-
+            log_info "Buil Iceberg spark runtime and push to S3"
+            build_and_push_iceberg_runtime
             log_success "All done! You can now start developing your applications."
             ;;
     esac
