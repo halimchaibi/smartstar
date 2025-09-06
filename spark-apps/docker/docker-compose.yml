@@ -133,24 +133,20 @@ services:
   minio:
     image: minio/minio:latest
     container_name: smartstar-minio
+    restart: unless-stopped
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - ./minio/data/:/data
     command: server /data --console-address ":9001"
-    deploy:
-      resources:
-        limits:
-          cpus: 1
-          memory: 1G
     networks:
       - smartstar
 
   postgres:
     image: postgres:16
     container_name: smartstar-postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_DB: smartstar
       POSTGRES_USER: smartstar

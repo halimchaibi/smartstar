@@ -138,8 +138,7 @@ object AppConfig extends LoggingUtils {
         )
       }
       .resolve()
-
-    logAllConfigEntries(loadedConfig)
+    //logAllConfigEntries(loadedConfig)
     loadedConfig
   }
 

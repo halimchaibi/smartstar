@@ -16,6 +16,46 @@ cd "$DOCKER_DIR" || {
     exit 1
 }
 
+# ==============================================================================
+# CONFIGURATION VARIABLES - Modify these as needed
+# ==============================================================================
+
+# Version configurations
+CONNECTOR_VERSION="${CONNECTOR_VERSION:-10.0.0}"
+
+# GitHub and external service URLs
+GITHUB_BASE_URL="${GITHUB_BASE_URL:-https://github.com}"
+STREAM_REACTOR_BASE_URL="${STREAM_REACTOR_BASE_URL:-${GITHUB_BASE_URL}/lensesio/stream-reactor/releases/download}"
+COURSIER_DOWNLOAD_URL="${COURSIER_DOWNLOAD_URL:-${GITHUB_BASE_URL}/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz}"
+DOCKER_COMPOSE_RELEASES_URL="${DOCKER_COMPOSE_RELEASES_URL:-https://api.github.com/repos/docker/compose/releases/latest}"
+DOCKER_COMPOSE_DOWNLOAD_URL="${DOCKER_COMPOSE_DOWNLOAD_URL:-${GITHUB_BASE_URL}/docker/compose/releases/download}"
+
+# Docker repository URLs
+DOCKER_DOWNLOAD_BASE="${DOCKER_DOWNLOAD_BASE:-https://download.docker.com/linux/ubuntu}"
+DOCKER_GPG_URL="${DOCKER_GPG_URL:-${DOCKER_DOWNLOAD_BASE}/gpg}"
+DOCKER_REPO_URL="${DOCKER_REPO_URL:-${DOCKER_DOWNLOAD_BASE}}"
+
+# MinIO URLs
+MINIO_BASE_URL="${MINIO_BASE_URL:-https://dl.min.io}"
+MINIO_CLIENT_URL="${MINIO_CLIENT_URL:-${MINIO_BASE_URL}/client/mc/release/linux-amd64/mc}"
+
+# SBT and Scala repository URLs
+SBT_KEYSERVER_BASE="${SBT_KEYSERVER_BASE:-https://keyserver.ubuntu.com}"
+SBT_KEYSERVER_URL="${SBT_KEYSERVER_URL:-${SBT_KEYSERVER_BASE}/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823}"
+SBT_REPO_BASE="${SBT_REPO_BASE:-https://repo.scala-sbt.org/scalasbt/debian}"
+SBT_REPO_MAIN="${SBT_REPO_MAIN:-${SBT_REPO_BASE} all main}"
+SBT_REPO_OLD="${SBT_REPO_OLD:-${SBT_REPO_BASE} /}"
+
+# Service endpoint configurations
+LOCALHOST_BASE="${LOCALHOST_BASE:-localhost}"
+KAFKA_CONNECT_URL="${KAFKA_CONNECT_URL:-http://${LOCALHOST_BASE}:8083}"
+KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-${LOCALHOST_BASE}:9092}"
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://${LOCALHOST_BASE}:9000}"
+MINIO_HEALTH_URL="${MINIO_HEALTH_URL:-http://${LOCALHOST_BASE}:9000/minio/health/live}"
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
+BUCKET_NAME="${BUCKET_NAME:-smartstar}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -69,8 +109,8 @@ check_ubuntu_version() {
     fi
     
     VERSION=$(grep VERSION_ID /etc/os-release | cut -d '"' -f 2)
-    MAJOR_VERSION=$(echo $VERSION | cut -d '.' -f 1)
-    MINOR_VERSION=$(echo $VERSION | cut -d '.' -f 2)
+    MAJOR_VERSION=$(echo "$VERSION" | cut -d '.' -f 1)
+    MINOR_VERSION=$(echo "$VERSION" | cut -d '.' -f 2)
     
     if [ "$MAJOR_VERSION" -lt 22 ] || ([ "$MAJOR_VERSION" -eq 20 ] && [ "$MINOR_VERSION" -lt 4 ]); then
         log_error "Ubuntu $VERSION detected. This script requires Ubuntu 22.04+"
@@ -110,11 +150,11 @@ cleanup_environment() {
     log_info "Stopping any remaining containers..."
     RUNNING_CONTAINERS=$(docker ps -q 2>/dev/null || sg docker -c "docker ps -q" 2>/dev/null || sudo docker ps -q 2>/dev/null)
     if [ -n "$RUNNING_CONTAINERS" ]; then
-        if docker stop $RUNNING_CONTAINERS 2>/dev/null; then
+        if docker stop "$RUNNING_CONTAINERS" 2>/dev/null; then
             log_info "Stopped running containers"
         elif sg docker -c "docker stop $RUNNING_CONTAINERS" 2>/dev/null; then
             log_info "Stopped running containers with sg docker"
-        elif sudo docker stop $RUNNING_CONTAINERS 2>/dev/null; then
+        elif sudo docker stop "$RUNNING_CONTAINERS" 2>/dev/null; then
             log_info "Stopped running containers with sudo"
         fi
     fi
@@ -193,10 +233,10 @@ cleanup_environment() {
     PORTS="1883 5432 8080 8083 9000 9001 9092 9093 9094"
     
     for port in $PORTS; do
-        PID=$(sudo lsof -ti :$port 2>/dev/null)
+        PID=$(sudo lsof -ti ":$port" 2>/dev/null)
         if [ -n "$PID" ]; then
             log_info "Killing process $PID using port $port"
-            sudo kill -9 $PID 2>/dev/null || true
+            sudo kill -9 "$PID" 2>/dev/null || true
         fi
     done
     
@@ -209,7 +249,12 @@ cleanup_environment() {
     
     # Show remaining directory structure
     log_info "Remaining directory structure:"
-    ls -la . | grep -E "mosquitto|kafka|minio|postgres" || log_info "All service directories removed"
+    # Use glob pattern instead of ls | grep for better file handling
+    if ls -d ./mosquitto ./kafka ./minio ./postgres 2>/dev/null; then
+        log_info "Some service directories still exist"
+    else
+        log_info "All service directories removed"
+    fi
     
     log_success "Environment cleanup completed!"
     log_info "You can now run the setup script again with a clean environment"
@@ -217,6 +262,23 @@ cleanup_environment() {
 
 # Interactive cleanup function
 interactive_cleanup() {
+    log_warning "This will completely remove all Docker containers, volumes, and service data!"
+    echo -n "Are you sure you want to proceed? (y/N): "
+    read -r response
+
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            cleanup_environment
+            ;;
+        *)
+            log_info "Cleanup cancelled"
+            ;;
+    esac
+}
+
+# Legacy main function - removed to avoid conflicts
+
+cleanup() {
     echo
     log_warning "This will:"
     log_warning "   • Stop and remove ALL Docker containers"
@@ -263,7 +325,7 @@ install_scala() {
     fi
     
     # Install coursier
-    curl -fL https://github.com/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz | gzip -d > cs
+    curl -fL "$COURSIER_DOWNLOAD_URL" | gzip -d > cs
     chmod +x cs
     sudo mv cs /usr/local/bin/
     
@@ -286,9 +348,9 @@ install_sbt() {
         return
     fi
     
-    echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-    echo "deb https://repo.scala-sbt.org/scalasbt/debian /" | sudo tee /etc/apt/sources.list.d/sbt_old.list
-    curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/sbt.gpg > /dev/null
+    echo "deb $SBT_REPO_MAIN" | sudo tee /etc/apt/sources.list.d/sbt.list
+    echo "deb $SBT_REPO_OLD" | sudo tee /etc/apt/sources.list.d/sbt_old.list
+    curl -sL "$SBT_KEYSERVER_URL" | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/sbt.gpg > /dev/null
     sudo apt update
     sudo apt install -y sbt
     
@@ -307,6 +369,109 @@ install_python() {
     fi
     
     log_success "Python 3 installed"
+}
+install_awscli_v2() {
+  echo ">>> Removing any old AWS CLI v1 from apt..."
+  if dpkg -l | grep -q awscli; then
+    sudo apt remove -y awscli
+  else
+    echo "No apt-based awscli found, skipping removal."
+  fi
+
+  echo ">>> Downloading AWS CLI v2 installer..."
+  curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+
+  echo ">>> Unzipping installer..."
+  unzip -qq awscliv2.zip &
+
+  echo ">>> Installing AWS CLI v2..."
+  sudo ./aws/install --update
+
+  echo ">>> Cleaning up temporary files..."
+  rm -rf awscliv2.zip aws/
+
+  echo ">>> Checking installed version..."
+  aws --version
+}
+
+download-mqtt-kafka-connector() {
+    log_info "Downloading Kafka Connect MQTT Connector..."
+    CONNECTOR_VERSION="10.0.0"
+    DOWNLOAD_URL="${STREAM_REACTOR_BASE_URL}/${CONNECTOR_VERSION}/kafka-connect-mqtt-${CONNECTOR_VERSION}.zip"
+    TEMP_DIR="/tmp/kafka-connect-mqtt-$$"
+    LIBS_DIR="../libs"
+
+    # Ensure we're in the right directory or create paths relative to current location
+    if [ ! -d "smartstar" ]; then
+        log_info "Creating smartstar directory structure..."
+        mkdir -p "$LIBS_DIR"
+    fi
+
+    log_info "Downloading Kafka Connect MQTT connector v${CONNECTOR_VERSION}..."
+
+    # Create temporary directory
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+
+    # Download the connector
+    if curl -L -o "kafka-connect-mqtt-${CONNECTOR_VERSION}.zip" "$DOWNLOAD_URL"; then
+        log_success "Download completed"
+    else
+        log_error "Failed to download connector"
+        cd - > /dev/null
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    # Unzip the connector
+    log_info "Extracting connector..."
+    if unzip -q "kafka-connect-mqtt-${CONNECTOR_VERSION}.zip"; then
+        log_success "Extraction completed"
+    else
+        log_error "Failed to extract connector"
+        cd - > /dev/null
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    # Find the assembly JAR file
+    log_info "Looking for assembly JAR file..."
+    ASSEMBLY_JAR=$(find . -name "*assembly*.jar" -type f | head -n 1)
+
+    if [ -z "$ASSEMBLY_JAR" ]; then
+        log_error "Assembly JAR file not found"
+        cd - > /dev/null
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    log_info "Found assembly JAR: $(basename "$ASSEMBLY_JAR")"
+
+    # Go back to original directory
+    cd - > /dev/null
+
+    # Copy the assembly JAR to libs directory
+    log_info "Copying assembly JAR to $LIBS_DIR..."
+    if cp "$TEMP_DIR/$ASSEMBLY_JAR" "$LIBS_DIR/"; then
+        log_success "JAR file copied to $LIBS_DIR/$(basename "$ASSEMBLY_JAR")"
+    else
+        log_error "Failed to copy JAR file"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    # Cleanup temporary directory
+    log_info "Cleaning up temporary files..."
+    rm -rf "$TEMP_DIR"
+
+    log_success "Kafka Connect MQTT connector installation completed!"
+    log_info "JAR location: $LIBS_DIR/$(basename "$ASSEMBLY_JAR")"
+
+    # List the libs directory contents
+    if [ -d "$LIBS_DIR" ]; then
+        log_info "Contents of $LIBS_DIR:"
+        ls -la "$LIBS_DIR"
+    fi
 }
 
 # Create required directories for Docker services
@@ -490,18 +655,18 @@ install_docker() {
     
     # Add Docker's official GPG key
     sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL "$DOCKER_GPG_URL" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     
     # Set up repository
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $DOCKER_REPO_URL $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
     
     # Install Docker
     sudo apt update
     sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
     
     # Install standalone docker-compose
-    DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
-    sudo curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    DOCKER_COMPOSE_VERSION=$(curl -s "$DOCKER_COMPOSE_RELEASES_URL" | grep 'tag_name' | cut -d\" -f4)
+    sudo curl -L "${DOCKER_COMPOSE_DOWNLOAD_URL}/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     sudo chmod +x /usr/local/bin/docker-compose
     
     # Add user to docker group
@@ -570,12 +735,13 @@ install_utilities() {
     # Install MinIO client if not present
     if ! command -v mc > /dev/null 2>&1; then
         log_info "Installing MinIO client (mc)..."
-        curl -O https://dl.min.io/client/mc/release/linux-amd64/mc
+        curl -O "$MINIO_CLIENT_URL"
         chmod +x mc
         sudo mv mc /usr/local/bin/
         log_success "MinIO client installed"
     fi
-   
+    # Install AWS CLI v2
+    install_awscli_v2
     log_success "Utilities installed"
 }   
 
@@ -689,23 +855,7 @@ build_and_run() {
         
         log_success "Docker services started with auto-created volumes"
     fi
-        
-    # Build Scala/SBT project if build.sbt exists (check in parent directory)
-    if [ -f "../build.sbt" ]; then
-        log_info "Building SBT project..."
-        (cd .. && sbt clean compile)
-        log_success "SBT project built successfully"
-        
-        # Optionally run the application
-        echo
-        read -p "Do you want to build the Scala application now? (y/n): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Running Scala application..."
-            (cd .. && sbt assembly)
-        fi
-    fi
-    
+
     # Install Python dependencies if requirements.txt exists
     if [ -f "requirements.txt" ] || [ -f "../requirements.txt" ]; then
         log_info "Installing Python dependencies..."
@@ -733,7 +883,6 @@ build_and_run() {
 }
 
 init-mqtt-connector() {
-    KAFKA_CONNECT_URL="http://localhost:8083"
     CONNECTOR_NAME="mqtt-source-wildcard"
 
     echo "Creating MQTT Source Connector..."
@@ -795,7 +944,7 @@ init-s3-bucket() {
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
-        if curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/minio/health/live | grep -q "200"; then
+        if curl -s -o /dev/null -w "%{http_code}" "$MINIO_HEALTH_URL" | grep -q "200"; then
             log_success "MinIO is ready"
             break
         else
@@ -812,7 +961,7 @@ init-s3-bucket() {
 
     # Create bucket if it doesn't exist
     if ! mc alias list | grep -q "local"; then
-        mc alias set local http://localhost:9000 minioadmin minioadmin
+        mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
     fi
 
     if ! mc ls local/$BUCKET_NAME >/dev/null 2>&1; then
@@ -824,7 +973,115 @@ init-s3-bucket() {
     fi
 }
 
-# Interactive menu function
+# Create Kafka topics for the streaming pipeline
+create_kafka_topics() {
+    log_info "Creating Kafka topics..."
+    kafka_container="smartstar-kafka-broker"
+    local bootstrap_servers="$KAFKA_BOOTSTRAP_SERVERS"
+    local max_attempts=30
+    local attempt=1
+
+    # Wait for Kafka to be ready
+    log_info "Waiting for Kafka to be ready..."
+    while [ $attempt -le $max_attempts ]; do
+        if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh --bootstrap-server $bootstrap_servers --list > /dev/null 2>&1; then
+            log_success "Kafka is ready"
+            break
+        else
+            log_info "Attempt $attempt/$max_attempts: Waiting for Kafka..."
+            sleep 2
+            attempt=$((attempt + 1))
+        fi
+    done
+
+    if [ $attempt -gt $max_attempts ]; then
+        log_error "Kafka did not become ready within timeout"
+        return 1
+    fi
+
+    # Define topics to create
+    local topics=(
+        "sensors.temperature:3:1"
+        "sensors.air_quality:3:1"
+        "sensors.motion:3:1"
+    )
+
+    # Create each topic
+    for topic_config in "${topics[@]}"; do
+        IFS=':' read -r topic_name partitions replication <<< "$topic_config"
+
+        log_info "Creating topic: $topic_name (partitions=$partitions, replication=$replication)"
+
+        if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server $bootstrap_servers \
+            --create \
+            --topic "$topic_name" \
+            --partitions "$partitions" \
+            --replication-factor "$replication" \
+            --if-not-exists > /dev/null 2>&1; then
+            log_success "Topic '$topic_name' created successfully"
+        else
+            log_warning "Topic '$topic_name' might already exist or creation failed"
+        fi
+    done
+
+    # List all topics to verify
+    log_info "Current Kafka topics:"
+    if docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh --bootstrap-server $bootstrap_servers --list; then
+        log_success "Kafka topics creation completed"
+    else
+        log_error "Failed to list Kafka topics"
+        return 1
+    fi
+
+    # Optional: Show topic details
+    log_info "Topic details:"
+    for topic_config in "${topics[@]}"; do
+        IFS=':' read -r topic_name partitions replication <<< "$topic_config"
+        echo "Topic: $topic_name"
+        docker exec $kafka_container /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server $bootstrap_servers \
+            --describe \
+            --topic "$topic_name" 2>/dev/null || true
+        echo "---"
+    done
+}
+
+build_and_push_iceberg_runtime() {
+  local SPARK_VERSION="4.0"                   # adjust to your Spark minor version (3.4, 3.5…)
+  local SCALA_VERSION="2.13"                  # Scala version
+  local ICEBERG_BRANCH="main"                 # branch or tag, e.g. release-1.10.0
+  local WORKDIR="/tmp/iceberg-build"          # temporary build location
+  local S3_BUCKET="s3://smartstar/"       # replace with your bucket
+  local ICEBERG_RELEASE="1.10.0-rc4"
+  local ARTIFACT_NAME="iceberg-spark-runtime-${SPARK_VERSION}_${SCALA_VERSION}-1.11.0-SNAPSHOT.jar"
+  local S3_ENDPOINT="http://localhost:9000"
+
+  echo ">>> Cloning Iceberg repo..."
+  rm -rf "$WORKDIR"
+  git clone --branch "$ICEBERG_BRANCH" https://github.com/apache/iceberg.git "$WORKDIR"
+
+  cd "$WORKDIR" || exit 1
+
+  git checkout -b apache-iceberg-${ICEBERG_RELEASE}
+
+  echo ">>> Building Spark runtime for Spark ${SPARK_VERSION} and Scala ${SCALA_VERSION}..."
+  #./gradlew spotlessApply
+  ./gradlew :iceberg-spark:iceberg-spark-runtime-4.0_2.13:assemble -x test
+  ./gradlew :iceberg-spark:iceberg-spark-runtime-4.0_2.13:publishToMavenLocal -x test
+
+  local JAR_PATH="spark/v${SPARK_VERSION}/spark-runtime/build/libs/${ARTIFACT_NAME}"
+
+  if [[ ! -f "$JAR_PATH" ]]; then
+    echo "Build failed: $JAR_PATH not found"
+    exit 1
+  fi
+
+  echo ">>> Uploading $ARTIFACT_NAME to $S3_BUCKET ..."
+  aws s3 cp "$JAR_PATH" "$S3_BUCKET/libs/$ARTIFACT_NAME" --acl --endpoint $S3_ENDPOINT bucket-owner-full-control
+
+  echo ">>> Done. Artifact available at $S3_BUCKET/$ARTIFACT_NAME"
+}
 # Interactive menu function
 show_menu() {
     echo
@@ -853,8 +1110,11 @@ test_function() {
     echo "8) check_env_health"
     echo "9) init-mqtt-connector"
     echo "10) init-s3-bucket"
-    echo
-    read -p "Select function to test (1-10): " -n 2 -r
+    echo "11) download-mqtt-kafka-connector"
+    echo "12) create_kafka_topics"
+    echo "13) build_and_push_iceberg_runtime"
+    echo "14) install_utilities"
+    read -p "Select function to test (1-14): " -n 2 -r
     echo
     
     case $REPLY in
@@ -868,6 +1128,10 @@ test_function() {
         8) check_env_health ;;
         9) init-mqtt-connector ;;
         10) init-s3-bucket ;;
+        11) download-mqtt-kafka-connector ;;
+        12) create_kafka_topics ;;
+        13) build_and_push_iceberg_runtime ;;
+        14) install_utilities ;;
         *) log_error "Invalid function selection"; exit 1 ;;
     esac
 }
@@ -900,6 +1164,10 @@ main() {
                     "check_env_health") check_env_health ;;
                     "init-mqtt-connector") init-mqtt-connector ;;
                     "init-s3-bucket") init-s3-bucket ;;
+                    "download-mqtt-kafka-connector") download-mqtt-kafka-connector ;;
+                    "create_kafka_topics") create_kafka_topics ;;
+                    "build_and_push_iceberg_runtime") build_and_push_iceberg_runtime ;;
+                    "install_utilities") install_utilities;;
                     *) log_error "Unknown function: $2"; exit 1 ;;
                 esac
             else
@@ -913,7 +1181,15 @@ main() {
             ;;
         "")
             # No argument provided, show interactive menu
-            show_menu
+            echo
+            log_info "Local Development Stack Setup - Choose an option:"
+            echo "1) cleanup   - Clean up all containers, volumes, and data directories"
+            echo "2) setup     - Run complete setup (install dependencies + start services)"
+            echo "3) test      - Run a single function for testing"
+            echo "4) all       - Run everything (setup + initialize connectors + S3 bucket)"
+            echo
+            read -p "Select option (1-4): " -n 1 -r
+            echo
             case $REPLY in
                 1) verify_working_directory; interactive_cleanup; exit 0 ;;
                 2) OPTION="setup" ;;
@@ -974,6 +1250,7 @@ main() {
             source ~/.bashrc 2>/dev/null || true
             sleep 5
             
+            download-mqtt-kafka-connector
             create_service_directories
             check_docker_compose
             
@@ -988,17 +1265,19 @@ main() {
             # Initialize connectors and S3 bucket
             log_info "Waiting for the environment to be fully up..."
             sleep 5
-            log_info "Initializing Kafka Connect plugins and connectors..."
+            log_info "Configure Kafka Connect plugins and connectors..."
             init-mqtt-connector
-
-            log_info "Initializing s3 bucket..."
+            log_info "Create Kafka topics ..."
+            create_kafka_topics
+            log_info "Create s3 bucket..."
             init-s3-bucket
-
+            log_info "Buil Iceberg spark runtime and push to S3"
+            build_and_push_iceberg_runtime
             log_success "All done! You can now start developing your applications."
             ;;
     esac
     
-    log_info "Note: If Docker commands fail, you may need to log out and back in"
+    log_info "Note: If Docker commands fail, you may need to log out and back in, restart the script"
 }
 # Run main function
 main "$@"
