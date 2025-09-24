@@ -68,7 +68,7 @@ class S3StreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
     logInfo("Initializing Iceberg table")
     spark.sql(
       """
-        |CREATE TABLE IF NOT EXISTS sensors.silver_dev.temperature (
+        |CREATE TABLE IF NOT EXISTS sensors.smartstar.temperature (
         |  device_id STRING,
         |  device_ts TIMESTAMP,
         |  sensor_type STRING,
@@ -109,7 +109,7 @@ class S3StreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
       .format("iceberg")
       .outputMode("append")
       .option("checkpointLocation", checkpointPath)
-      .toTable("sensors.temperature")
+      .toTable("sensors.smartstar.temperature")
 
     query.awaitTermination()
   }

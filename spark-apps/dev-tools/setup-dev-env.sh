@@ -133,6 +133,7 @@ cleanup_environment() {
     
     # Stop and remove all Docker containers and networks
     log_info "Stopping and removing Docker containers..."
+    docker kill $(docker ps -q)
     if [ -f "docker-compose-dev.yml" ] || [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
         # Try different permission methods for docker-compose down
         if docker compose -f docker-compose-dev.yml down --remove-orphans --volumes 2>/dev/null; then
