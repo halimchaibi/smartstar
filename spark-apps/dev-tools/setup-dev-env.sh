@@ -370,28 +370,45 @@ install_python() {
     
     log_success "Python 3 installed"
 }
+
 install_awscli_v2() {
-  echo ">>> Removing any old AWS CLI v1 from apt..."
+  log_info "Removing any old AWS CLI v1 from apt..."
   if dpkg -l | grep -q awscli; then
     sudo apt remove -y awscli
   else
-    echo "No apt-based awscli found, skipping removal."
+    log_info "No apt-based awscli found, skipping removal."
   fi
 
-  echo ">>> Downloading AWS CLI v2 installer..."
-  curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  log_info "Downloading AWS CLI v2 installer..."
+  if ! curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; then
+    log_error "ERROR: Download failed"
+    return 1
+  fi
+  
+  # Verify download completed
+  if [ ! -f "awscliv2.zip" ] || [ ! -s "awscliv2.zip" ]; then
+    log_info "ERROR: Download incomplete or file is empty"
+    return 1
+  fi
+  
+  # Check if it's a valid zip file
+  if ! file awscliv2.zip | grep -q "Zip archive"; then
+    log_error "ERROR: Downloaded file is not a valid zip archive"
+    file awscliv2.zip  # Show what we got instead
+    return 1
+  fi
 
-  echo ">>> Unzipping installer..."
-  unzip -qq awscliv2.zip &
+  log_info "$(pwd)"
 
-  echo ">>> Installing AWS CLI v2..."
+  log_info "Unzipping installer..."
+  rm -rf aws
+  unzip awscliv2.zip
+  log_info "Installing ..."
   sudo ./aws/install --update
-
+  log_info "aws cli v2 installed"
   echo ">>> Cleaning up temporary files..."
   rm -rf awscliv2.zip aws/
-
-  echo ">>> Checking installed version..."
-  aws --version
+  # Rest of your script...
 }
 
 download-mqtt-kafka-connector() {
@@ -741,7 +758,7 @@ install_utilities() {
         log_success "MinIO client installed"
     fi
     # Install AWS CLI v2
-    install_awscli_v2
+    # install_awscli_v2
     log_success "Utilities installed"
 }   
 
@@ -1166,7 +1183,7 @@ main() {
                     "init-s3-bucket") init-s3-bucket ;;
                     "download-mqtt-kafka-connector") download-mqtt-kafka-connector ;;
                     "create_kafka_topics") create_kafka_topics ;;
-                    "build_and_push_iceberg_runtime") build_and_push_iceberg_runtime ;;
+                    #"build_and_push_iceberg_runtime") build_and_push_iceberg_runtime ;;
                     "install_utilities") install_utilities;;
                     *) log_error "Unknown function: $2"; exit 1 ;;
                 esac
@@ -1272,7 +1289,7 @@ main() {
             log_info "Create s3 bucket..."
             init-s3-bucket
             log_info "Buil Iceberg spark runtime and push to S3"
-            build_and_push_iceberg_runtime
+            # build_and_push_iceberg_runtime
             log_success "All done! You can now start developing your applications."
             ;;
     esac

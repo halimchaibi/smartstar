@@ -54,7 +54,7 @@ lazy val assemblySettings = Seq(
     cp filter { f =>
       val name = f.data.getName.toLowerCase
       (
-        name.startsWith("log4j-1.2-api") && !name.contains("iceberg")
+        name.startsWith("log4j-1.2-api")
       )
     }
   }
@@ -123,7 +123,8 @@ lazy val normalization = (project in file("modules/normalization"))
     libraryDependencies ++= commonDependencies ++ Seq(
       "org.apache.hadoop" % "hadoop-aws" % "3.4.1",
       "org.apache.spark" %% "spark-avro" % "4.0.0" % sparkScope,
-      "org.postgresql" % "postgresql" % "42.7.3"
+      "org.postgresql" % "postgresql" % "42.7.3",
+      "org.apache.iceberg" % "iceberg-spark-runtime-4.0_2.13" % "1.10.0"
     ),
     assemblySettings
   )
