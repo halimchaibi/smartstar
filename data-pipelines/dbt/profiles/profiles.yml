@@ -1,0 +1,11 @@
+sensors:
+  target: dev
+  outputs:
+    dev:
+      type: spark
+      method: thrift
+      host: localhost
+      port: 10000
+      schema: smartstar
+      catalog: sensors
+      threads: 1

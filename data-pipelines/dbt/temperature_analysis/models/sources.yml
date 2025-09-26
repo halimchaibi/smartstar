@@ -1,0 +1,46 @@
+version: 2
+
+sources:
+  - name: sensors
+    schema: sensors
+    description: "Raw sensor data from Spark streaming jobs stored in Iceberg"
+    tables:
+      - name: temperature
+        identifier: "smartstar.temperature"
+        description: "Temperature and humidity sensor readings"
+        columns:
+          - name: device_id
+            description: "Unique device identifier"
+            tests:
+              - not_null
+          - name: device_ts
+            description: "Timestamp from the device"
+            tests:
+              - not_null
+          - name: sensor_type
+            description: "Type of sensor"
+          - name: latitude
+            description: "Device latitude coordinate"
+          - name: longitude
+            description: "Device longitude coordinate"
+          - name: city
+            description: "City where device is located"
+          - name: temperature
+            description: "Temperature reading"
+          - name: humidity
+            description: "Humidity percentage"
+          - name: unit
+            description: "Temperature unit (C/F)"
+          - name: event_time
+            description: "Event processing timestamp"
+          - name: year
+            description: "Partition year"
+          - name: month
+            description: "Partition month"
+          - name: day
+            description: "Partition day"
+        
+        loaded_at_field: event_time
+        freshness:
+          warn_after: {count: 15, period: minute}
+          error_after: {count: 30, period: minute}

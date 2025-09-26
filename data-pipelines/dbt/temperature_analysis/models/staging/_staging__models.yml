@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_temperature_sensors
+    description: "Cleaned and standardized temperature sensor data"
+    columns:
+      - name: device_id
+        description: "Unique device identifier"
+        tests:
+          - not_null
+          - dbt_utils.not_empty_string
+      - name: device_ts
+        description: "Device timestamp"
+        tests:
+          - not_null
+      - name: temperature_celsius
+        description: "Temperature normalized to Celsius"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -50
+              max_value: 80
