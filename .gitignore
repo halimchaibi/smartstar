@@ -22,7 +22,6 @@
 # Exceptions (needed jars)
 !spark-apps/libs/*.jar
 
-*.gitignore
 # SBT specific
 target/
 project/project/
@@ -133,6 +132,51 @@ minio/data/*
 
 # Local files and dir
 note-books/*
-scripts/*
 .vscode
-.idea
+.idea.venv
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+.python-version
+
+# Spark artifacts
+spark-apps/artifacts/
+spark-apps/**/target/
+*.checkpoint
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Docker volumes data
+infrastructure/docker/kafka/data/
+infrastructure/docker/kafka/logs/
+infrastructure/docker/kafka/metadata/
+infrastructure/docker/mosquitto/data/
+infrastructure/docker/mosquitto/log/
+infrastructure/docker/postgres/data/
+infrastructure/docker/minio/data/
+infrastructure/docker/kafka-connect/plugins/*.jar
+
+# Temporary output files
+/tmp/
+*.log.gz
+
+# Test outputs
+test-output/
+coverage/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg
+*.whl

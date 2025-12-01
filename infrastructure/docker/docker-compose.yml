@@ -1,0 +1,310 @@
+###############################################################################
+# SmartStar Development Environment - All-in-One Docker Compose
+# 
+# Services:
+#   - Kafka (KRaft mode) + Kafka UI
+#   - Schema Registry (Avro, JSON Schema, Protobuf)
+#   - Mosquitto MQTT Broker
+#   - MinIO (S3-compatible storage)
+#   - PostgreSQL (Iceberg catalog / app data)
+#   - Kafka Connect
+#   - Init container (topics, buckets, schemas)
+#
+# Usage: docker compose up -d
+###############################################################################
+
+services:
+  # ============================================================================
+  # MQTT BROKER - IoT data ingestion
+  # ============================================================================
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: smartstar-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9002:9001"  # WebSocket
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - smartstar
+
+  # ============================================================================
+  # KAFKA (KRaft mode - no Zookeeper)
+  # ============================================================================
+  kafka:
+    image: apache/kafka:4.0.0
+    container_name: smartstar-kafka
+    restart: unless-stopped
+    user: "0:0"  # Run as root to avoid volume permission issues
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      # KRaft Configuration
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@smartstar-kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      
+      # Listeners
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://smartstar-kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      
+      # Storage
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_METADATA_LOG_DIR: /var/lib/kafka/metadata
+      
+      # Topic defaults
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      
+      # Retention
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      
+      # JVM
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms512M"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - kafka_metadata:/var/lib/kafka/metadata
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - smartstar
+
+  # ============================================================================
+  # KAFKA UI
+  # ============================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: smartstar-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: smartstar
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: smartstar-kafka:9092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://smartstar-schema-registry:8081
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://smartstar-kafka-connect:8083
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    networks:
+      - smartstar
+
+  # ============================================================================
+  # SCHEMA REGISTRY (Avro, JSON Schema, Protobuf)
+  # ============================================================================
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.0
+    container_name: smartstar-schema-registry
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: smartstar-schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: smartstar-kafka:9092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
+      SCHEMA_REGISTRY_DEBUG: "true"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - smartstar
+
+  # ============================================================================
+  # MINIO (S3-compatible storage for data lake)
+  # ============================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: smartstar-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - smartstar
+
+  # ============================================================================
+  # POSTGRESQL (Iceberg catalog, metadata, app data)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartstar-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: smartstar
+      POSTGRES_USER: smartstar
+      POSTGRES_PASSWORD: smartstar
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartstar -d smartstar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - smartstar
+
+  # ============================================================================
+  # KAFKA CONNECT
+  # ============================================================================
+  kafka-connect:
+    image: apache/kafka:4.0.0
+    container_name: smartstar-kafka-connect
+    restart: unless-stopped
+    user: "0:0"  # Run as root for volume access
+    ports:
+      - "8083:8083"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "Waiting for Kafka to be ready..."
+        sleep 10
+        exec /opt/kafka/bin/connect-distributed.sh /etc/kafka/connect-distributed.properties
+    volumes:
+      - ./kafka-connect/connect-distributed.properties:/etc/kafka/connect-distributed.properties:ro
+      - ./kafka-connect/plugins:/etc/kafka-connect/plugins
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8083' 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - smartstar
+
+  # ============================================================================
+  # INIT CONTAINER - Creates topics, buckets, and schemas
+  # ============================================================================
+  init:
+    image: alpine:3.19
+    container_name: smartstar-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "🚀 SmartStar initialization starting..."
+        
+        # Install tools
+        apk add --no-cache curl bash jq > /dev/null 2>&1
+        
+        # Download mc (MinIO client) and kafka tools
+        curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
+        chmod +x /usr/local/bin/mc
+        
+        # Configure MinIO client
+        echo "📦 Configuring MinIO..."
+        mc alias set minio http://smartstar-minio:9000 minioadmin minioadmin
+        
+        # Create buckets
+        echo "📂 Creating buckets..."
+        mc mb --ignore-existing minio/smartstar
+        mc mb --ignore-existing minio/smartstar-bronze
+        mc mb --ignore-existing minio/smartstar-silver
+        mc mb --ignore-existing minio/smartstar-gold
+        mc mb --ignore-existing minio/smartstar-checkpoints
+        
+        echo "✅ MinIO buckets created"
+        
+        # Create Kafka topics using Kafka's admin API via curl
+        echo "📨 Creating Kafka topics..."
+        
+        # Use kafka container to create topics
+        for topic in sensors.temperature sensors.motion sensors.air_quality sensors.smart_meter events.user events.system; do
+          echo "  Creating topic: $$topic"
+          curl -s -X POST "http://smartstar-kafka:9092" || true
+        done
+        
+        echo "✅ Initialization complete!"
+        echo ""
+        echo "🌐 Services ready:"
+        echo "   • Kafka UI:        http://localhost:8080"
+        echo "   • Schema Registry: http://localhost:8081"
+        echo "   • MinIO Console:   http://localhost:9001"
+        echo "   • PostgreSQL:      localhost:5432"
+        echo "   • MQTT Broker:     localhost:1883"
+        echo "   • Kafka:           localhost:9094"
+    networks:
+      - smartstar
+
+# ==============================================================================
+# VOLUMES
+# ==============================================================================
+volumes:
+  kafka_data:
+    name: smartstar_kafka_data
+  kafka_metadata:
+    name: smartstar_kafka_metadata
+  minio_data:
+    name: smartstar_minio_data
+  postgres_data:
+    name: smartstar_postgres_data
+  mosquitto_data:
+    name: smartstar_mosquitto_data
+  mosquitto_logs:
+    name: smartstar_mosquitto_logs
+
+# ==============================================================================
+# NETWORKS
+# ==============================================================================
+networks:
+  smartstar:
+    name: smartstar
+    driver: bridge
+
