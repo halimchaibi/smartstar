@@ -1,58 +1,97 @@
 #!/bin/bash
+###############################################################################
+# SmartStar Development Environment - Complete Setup Script
+# 
+# This script sets up the complete development environment including:
+# - Prerequisites (Java, Scala, SBT, Python, Docker)
+# - Docker services (Kafka, MinIO, PostgreSQL, Mosquitto, etc.)
+# - Kafka topics, S3 buckets, and connectors
+#
+# Usage:
+#   ./setup-dev-env.sh              # Interactive menu
+#   ./setup-dev-env.sh start        # Start Docker services only
+#   ./setup-dev-env.sh setup        # Full setup (install deps + start)
+#   ./setup-dev-env.sh stop         # Stop all services
+#   ./setup-dev-env.sh status       # Show service status
+#   ./setup-dev-env.sh logs         # Tail service logs
+#   ./setup-dev-env.sh clean        # Stop and remove all data
+#   ./setup-dev-env.sh test <func>  # Test individual function
+#   ./setup-dev-env.sh health       # Check environment health
+#
+###############################################################################
 
-# SmartStar Complete Development Environment Setup Script
-# This script sets up the complete development environment from scratch
-# Author: SmartStar Development Team
-# Version: 1.0.0
+set -e
 
-set -e  # Exit on any error
+# ==============================================================================
+# Configuration
+# ==============================================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOCKER_DIR="$SCRIPT_DIR/infrastructure/docker"
+COMPOSE_FILE="$DOCKER_DIR/docker-compose.yml"
+PROJECT_NAME="smartstar"
 
-# Colors for output
+# Version configurations
+JAVA_VERSION="${JAVA_VERSION:-21}"
+SCALA_VERSION="${SCALA_VERSION:-2.13.12}"
+CONNECTOR_VERSION="${CONNECTOR_VERSION:-10.0.0}"
+
+# GitHub and external service URLs
+GITHUB_BASE_URL="${GITHUB_BASE_URL:-https://github.com}"
+STREAM_REACTOR_BASE_URL="${STREAM_REACTOR_BASE_URL:-${GITHUB_BASE_URL}/lensesio/stream-reactor/releases/download}"
+COURSIER_DOWNLOAD_URL="${COURSIER_DOWNLOAD_URL:-${GITHUB_BASE_URL}/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz}"
+MINIO_CLIENT_URL="${MINIO_CLIENT_URL:-https://dl.min.io/client/mc/release/linux-amd64/mc}"
+
+# Service endpoints
+KAFKA_BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:9094}"
+KAFKA_INTERNAL="${KAFKA_INTERNAL:-localhost:9092}"
+KAFKA_CONNECT_URL="${KAFKA_CONNECT_URL:-http://localhost:8083}"
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
+
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
 
-# Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPARK_APPS_DIR="$SCRIPT_DIR/spark-apps"
-DOCKER_DIR="$SPARK_APPS_DIR/docker"
-JAVA_VERSION="11"
-SCALA_VERSION="2.13"
-SBT_VERSION="1.9.7"
-SPARK_VERSION="3.5.1"
+# ==============================================================================
+# Logging
+# ==============================================================================
+log()     { echo -e "${BLUE}▸${NC} $1"; }
+success() { echo -e "${GREEN}✓${NC} $1"; }
+warn()    { echo -e "${YELLOW}⚠${NC} $1"; }
+error()   { echo -e "${RED}✗${NC} $1"; }
+header()  { echo -e "\n${BOLD}${CYAN}$1${NC}"; }
 
-# Logging functions
-log_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
+# ==============================================================================
+# Docker Compose command detection
+# ==============================================================================
+get_compose_cmd() {
+    if docker compose version &> /dev/null; then
+        echo "docker compose"
+    elif command -v docker-compose &> /dev/null; then
+        echo "docker-compose"
+    else
+        error "Docker Compose not found. Please install Docker Compose."
+        exit 1
+    fi
 }
 
-log_success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
-log_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-log_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
-
-log_step() {
-    echo -e "\n${BLUE}🔄 $1${NC}"
-}
-
-# Function to detect OS
+# ==============================================================================
+# OS Detection
+# ==============================================================================
 detect_os() {
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        if command -v apt-get &> /dev/null; then
+        if grep -q Microsoft /proc/version 2>/dev/null; then
+            echo "wsl"
+        elif command -v apt-get &> /dev/null; then
             echo "ubuntu"
         elif command -v yum &> /dev/null; then
             echo "rhel"
-        elif command -v pacman &> /dev/null; then
-            echo "arch"
         else
             echo "linux"
         fi
@@ -63,650 +102,891 @@ detect_os() {
     fi
 }
 
-# Function to check if command exists
-command_exists() {
-    command -v "$1" &> /dev/null
-}
-
-# Function to check if port is in use
-check_port() {
-    local port=$1
-    if lsof -Pi :$port -sTCP:LISTEN -t &> /dev/null; then
-        return 0
-    else
-        return 1
+# ==============================================================================
+# Pre-flight checks
+# ==============================================================================
+preflight_check() {
+    header "Pre-flight checks"
+    
+    # Check Docker
+    if ! command -v docker &> /dev/null; then
+        error "Docker is not installed. Please install Docker first."
+        echo "  → https://docs.docker.com/get-docker/"
+        exit 1
     fi
+    success "Docker is installed"
+    
+    # Check Docker daemon
+    if ! docker info &> /dev/null; then
+        error "Docker daemon is not running. Please start Docker."
+        exit 1
+    fi
+    success "Docker daemon is running"
+    
+    # Check compose file
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        error "docker-compose.yml not found at $COMPOSE_FILE"
+        exit 1
+    fi
+    success "Compose file found"
 }
 
-# Function to wait for service to be ready
-wait_for_service() {
-    local service_name=$1
-    local port=$2
-    local max_attempts=60
-    local attempt=1
-    
-    log_info "Waiting for $service_name to be ready on port $port..."
-    
-    while [ $attempt -le $max_attempts ]; do
-        if check_port $port; then
-            log_success "$service_name is ready!"
-            return 0
-        fi
-        
-        echo -n "."
-        sleep 2
-        ((attempt++))
-    done
-    
-    log_error "$service_name failed to start after $((max_attempts * 2)) seconds"
-    return 1
-}
-
-# Function to install Java
+# ==============================================================================
+# Install Java
+# ==============================================================================
 install_java() {
-    local os=$(detect_os)
+    header "Installing Java $JAVA_VERSION"
     
-    if command_exists java; then
-        local java_version=$(java -version 2>&1 | head -n1 | cut -d'"' -f2 | cut -d'.' -f1-2)
-        log_info "Java is already installed: $java_version"
-        
-        # Check if it's Java 8 or 11
-        if [[ "$java_version" == "1.8" ]] || [[ "$java_version" == "11"* ]] || [[ "$java_version" == "17"* ]]; then
-            log_success "Java version is compatible"
+    if java -version 2>&1 | grep -qE "openjdk version \"$JAVA_VERSION|version \"$JAVA_VERSION"; then
+        success "Java $JAVA_VERSION is already installed"
             return 0
-        else
-            log_warning "Java version might not be compatible, but continuing..."
         fi
-    else
-        log_step "Installing Java $JAVA_VERSION..."
         
+    local os=$(detect_os)
         case $os in
-            "ubuntu")
-                sudo apt-get update
-                sudo apt-get install -y openjdk-$JAVA_VERSION-jdk
+        "ubuntu"|"wsl")
+            sudo apt update
+            sudo apt install -y openjdk-${JAVA_VERSION}-jdk
                 ;;
             "macos")
-                if command_exists brew; then
+            if command -v brew &> /dev/null; then
                     brew install openjdk@$JAVA_VERSION
                 else
-                    log_error "Homebrew not found. Please install Java manually."
+                error "Homebrew not found. Please install Java manually."
                     return 1
                 fi
                 ;;
-            "rhel")
-                sudo yum install -y java-$JAVA_VERSION-openjdk-devel
-                ;;
             *)
-                log_error "Unsupported OS for automatic Java installation"
+            error "Unsupported OS for automatic Java installation"
                 return 1
                 ;;
         esac
         
-        log_success "Java $JAVA_VERSION installed successfully"
+    # Set JAVA_HOME
+    if [ -d "/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-amd64" ]; then
+        echo "export JAVA_HOME=/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-amd64" >> ~/.bashrc
+        export JAVA_HOME=/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-amd64
     fi
+    
+    success "Java $JAVA_VERSION installed"
 }
 
-# Function to install Scala
+# ==============================================================================
+# Install Scala
+# ==============================================================================
 install_scala() {
-    local os=$(detect_os)
+    header "Installing Scala $SCALA_VERSION"
     
-    if command_exists scala; then
-        local scala_version=$(scala -version 2>&1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
-        log_info "Scala is already installed: $scala_version"
-        
-        if [[ "$scala_version" == "2.13"* ]]; then
-            log_success "Scala version is compatible"
+    if scala -version 2>&1 | grep -q "2.13"; then
+        success "Scala 2.13 is already installed"
             return 0
-        else
-            log_warning "Scala version might not be compatible, but continuing..."
-        fi
-    else
-        log_step "Installing Scala $SCALA_VERSION..."
-        
-        case $os in
-            "ubuntu")
-                sudo apt-get update
-                sudo apt-get install -y scala
-                ;;
-            "macos")
-                if command_exists brew; then
-                    brew install scala
-                else
-                    log_error "Homebrew not found. Please install Scala manually."
-                    return 1
-                fi
-                ;;
-            "rhel")
-                # Install via coursier
-                curl -fL https://github.com/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz | gzip -d > cs
-                chmod +x cs
-                sudo mv cs /usr/local/bin/
-                cs install scala:$SCALA_VERSION
-                ;;
-            *)
-                log_error "Unsupported OS for automatic Scala installation"
-                return 1
-                ;;
-        esac
-        
-        log_success "Scala installed successfully"
-    fi
-}
-
-# Function to install SBT
-install_sbt() {
-    local os=$(detect_os)
-    
-    if command_exists sbt; then
-        log_info "SBT is already installed"
-        log_success "SBT is available"
-        return 0
-    else
-        log_step "Installing SBT $SBT_VERSION..."
-        
-        case $os in
-            "ubuntu")
-                sudo apt-get update
-                sudo apt-get install -y apt-transport-https curl gnupg
-                curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | sudo gpg --dearmor -o /usr/share/keyrings/sbt.gpg
-                echo "deb [signed-by=/usr/share/keyrings/sbt.gpg] https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-                sudo apt-get update
-                sudo apt-get install -y sbt
-                ;;
-            "macos")
-                if command_exists brew; then
-                    brew install sbt
-                else
-                    log_error "Homebrew not found. Please install SBT manually."
-                    return 1
-                fi
-                ;;
-            "rhel")
-                sudo rm -f /etc/yum.repos.d/bintray-rpm.repo
-                curl -L https://www.scala-sbt.org/sbt-rpm.repo > sbt-rpm.repo
-                sudo mv sbt-rpm.repo /etc/yum.repos.d/
-                sudo yum install -y sbt
-                ;;
-            *)
-                log_error "Unsupported OS for automatic SBT installation"
-                return 1
-                ;;
-        esac
-        
-        log_success "SBT installed successfully"
-    fi
-}
-
-# Function to install Docker
-install_docker() {
-    local os=$(detect_os)
-    
-    if command_exists docker; then
-        log_info "Docker is already installed"
-        
-        # Check if Docker daemon is running
-        if docker info &> /dev/null; then
-            log_success "Docker is running"
-        else
-            log_warning "Docker is installed but not running. Starting Docker..."
-            case $os in
-                "ubuntu"|"rhel")
-                    sudo systemctl start docker
-                    sudo systemctl enable docker
-                    ;;
-                "macos")
-                    log_warning "Please start Docker Desktop manually"
-                    ;;
-            esac
-        fi
-        
-        return 0
-    else
-        log_step "Installing Docker..."
-        
-        case $os in
-            "ubuntu")
-                sudo apt-get update
-                sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
-                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-                sudo apt-get update
-                sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-                sudo systemctl start docker
-                sudo systemctl enable docker
-                sudo usermod -aG docker $USER
-                ;;
-            "macos")
-                log_error "Please install Docker Desktop for Mac manually from https://docker.com"
-                return 1
-                ;;
-            "rhel")
-                sudo yum install -y yum-utils
-                sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-                sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-                sudo systemctl start docker
-                sudo systemctl enable docker
-                sudo usermod -aG docker $USER
-                ;;
-            *)
-                log_error "Unsupported OS for automatic Docker installation"
-                return 1
-                ;;
-        esac
-        
-        log_success "Docker installed successfully"
-        log_warning "You may need to log out and back in for Docker group membership to take effect"
-    fi
-}
-
-# Function to install Python dependencies
-install_python_deps() {
-    log_step "Installing Python dependencies for data generator..."
-    
-    if command_exists python3; then
-        log_info "Python 3 is available"
-    else
-        log_error "Python 3 is not installed. Please install Python 3 first."
-        return 1
     fi
     
-    if command_exists pip3; then
-        log_info "Installing Python packages..."
-        pip3 install --user paho-mqtt faker
-        log_success "Python dependencies installed"
-    else
-        log_error "pip3 is not available. Please install pip3 first."
-        return 1
-    fi
-}
-
-# Function to install Apache Spark (optional for local development)
-install_spark() {
-    if command_exists spark-submit; then
-        log_info "Spark is already installed"
-        log_success "Spark is available"
-        return 0
+    # Install coursier
+    if ! command -v cs &> /dev/null; then
+        log "Installing Coursier..."
+        curl -fL "$COURSIER_DOWNLOAD_URL" | gzip -d > /tmp/cs
+        chmod +x /tmp/cs
+        sudo mv /tmp/cs /usr/local/bin/cs
     fi
     
-    log_step "Installing Apache Spark $SPARK_VERSION..."
-    
-    local spark_dir="/opt/spark"
-    local spark_download="https://archive.apache.org/dist/spark/spark-$SPARK_VERSION/spark-$SPARK_VERSION-bin-hadoop3.tgz"
-    
-    # Download and install Spark
-    cd /tmp
-    wget -q "$spark_download" -O spark.tgz
-    sudo mkdir -p "$spark_dir"
-    sudo tar -xzf spark.tgz -C "$spark_dir" --strip-components=1
-    sudo chown -R $USER:$USER "$spark_dir"
+    # Install Scala via coursier
+    cs install scala:$SCALA_VERSION --force
     
     # Add to PATH
-    echo "export SPARK_HOME=$spark_dir" >> ~/.bashrc
-    echo "export PATH=\$PATH:\$SPARK_HOME/bin:\$SPARK_HOME/sbin" >> ~/.bashrc
+    if ! grep -q "coursier/bin" ~/.bashrc; then
+        echo 'export PATH="$PATH:$HOME/.local/share/coursier/bin"' >> ~/.bashrc
+    fi
+    export PATH="$PATH:$HOME/.local/share/coursier/bin"
     
-    # Source for current session
-    export SPARK_HOME="$spark_dir"
-    export PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
-    
-    log_success "Apache Spark installed successfully"
-    log_info "Please restart your shell or run 'source ~/.bashrc' to update PATH"
+    success "Scala $SCALA_VERSION installed"
 }
 
-# Function to setup Docker environment
-setup_docker_environment() {
-    log_step "Setting up Docker environment..."
+# ==============================================================================
+# Install SBT
+# ==============================================================================
+install_sbt() {
+    header "Installing SBT"
     
-    cd "$DOCKER_DIR"
-    
-    # Create necessary directories
-    log_info "Creating Docker volume directories..."
-    mkdir -p kafka/data kafka/logs kafka/metadata kafka/plugins
-    mkdir -p mosquitto/data mosquitto/logs
-    mkdir -p postgres/data
-    mkdir -p minio/data
-    
-    # Set proper permissions for new directories only
-    chmod 755 kafka mosquitto postgres minio 2>/dev/null || true
-    find kafka mosquitto postgres minio -type d -exec chmod 755 {} \; 2>/dev/null || true
-    
-    # Create Kafka Connect configuration if not exists
-    if [ ! -f "kafka/connect-distributed.properties" ]; then
-        log_info "Creating Kafka Connect configuration..."
-        cat > kafka/connect-distributed.properties << 'EOF'
-bootstrap.servers=localhost:9092
-group.id=external-connect-cluster
-key.converter=org.apache.kafka.connect.json.JsonConverter
-value.converter=org.apache.kafka.connect.json.JsonConverter
-key.converter.schemas.enable=false
-value.converter.schemas.enable=false
-offset.storage.topic=_connect-offsets
-offset.storage.replication.factor=1
-config.storage.topic=_connect-configs
-config.storage.replication.factor=1
-status.storage.topic=_connect-status
-status.storage.replication.factor=1
-offset.flush.interval.ms=10000
-rest.port=8083
-plugin.path=/etc/kafka-connect/plugins
-EOF
+    if command -v sbt &> /dev/null; then
+        success "SBT is already installed"
+        return 0
     fi
-    
-    # Ensure Mosquitto config exists
-    if [ ! -f "mosquitto/config/mosquitto.conf" ]; then
-        log_info "Creating Mosquitto configuration..."
-        mkdir -p mosquitto/config
-        cat > mosquitto/config/mosquitto.conf << 'EOF'
-listener 1883
-allow_anonymous true
-persistence true
-persistence_location /mosquitto/data/
-log_dest file /mosquitto/logs/mosquitto.log
-log_type all
-connection_messages true
-log_timestamp true
-EOF
-    fi
-    
-    log_success "Docker environment setup completed"
-}
-
-# Function to start Docker services
-start_docker_services() {
-    log_step "Starting Docker services..."
-    
-    cd "$DOCKER_DIR"
-    
-    # Determine docker-compose command
-    if command -v docker-compose &> /dev/null; then
-        DOCKER_COMPOSE="docker-compose"
-    else
-        DOCKER_COMPOSE="docker compose"
-    fi
-    
-    # Stop any existing services
-    log_info "Stopping any existing services..."
-    $DOCKER_COMPOSE -f docker-compose-dev.yml down &> /dev/null || true
-    
-    # Start services
-    log_info "Starting Docker Compose services..."
-    $DOCKER_COMPOSE -f docker-compose-dev.yml up -d
-    
-    # Wait for services to be ready
-    log_info "Waiting for services to start..."
-    sleep 10
-    
-    # Check service health
-    local services=("postgres:5432" "kafka:9092" "mosquitto:1883" "minio:9000")
-    for service in "${services[@]}"; do
-        local name=$(echo $service | cut -d':' -f1)
-        local port=$(echo $service | cut -d':' -f2)
         
-        if wait_for_service "$name" "$port"; then
-            log_success "$name is running"
+    local os=$(detect_os)
+        case $os in
+        "ubuntu"|"wsl")
+            sudo apt update
+            sudo apt install -y apt-transport-https curl gnupg
+            echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
+            echo "deb https://repo.scala-sbt.org/scalasbt/debian /" | sudo tee /etc/apt/sources.list.d/sbt_old.list
+            curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | \
+                gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/sbt.gpg > /dev/null
+            sudo apt update
+            sudo apt install -y sbt
+                ;;
+            "macos")
+            if command -v brew &> /dev/null; then
+                    brew install sbt
+                else
+                error "Homebrew not found. Please install SBT manually."
+                    return 1
+                fi
+                ;;
+        *)
+            error "Unsupported OS for automatic SBT installation"
+                return 1
+                ;;
+        esac
+        
+    success "SBT installed"
+}
+
+# ==============================================================================
+# Install Python
+# ==============================================================================
+install_python() {
+    header "Installing Python 3"
+    
+    if command -v python3 &> /dev/null; then
+        success "Python 3 is already installed: $(python3 --version)"
+        return 0
+    fi
+    
+    local os=$(detect_os)
+            case $os in
+        "ubuntu"|"wsl")
+            sudo apt install -y python3 python3-pip python3-venv python3-dev
+                    ;;
+                "macos")
+            if command -v brew &> /dev/null; then
+                brew install python
+            fi
+                ;;
+        esac
+        
+    # Create python symlink
+    if ! command -v python &> /dev/null; then
+        sudo ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null || true
+    fi
+    
+    # Install common packages
+    pip3 install --user paho-mqtt faker requests 2>/dev/null || true
+    
+    success "Python 3 installed"
+}
+
+# ==============================================================================
+# Install Docker
+# ==============================================================================
+install_docker() {
+    header "Installing Docker"
+    
+    local os=$(detect_os)
+    
+    # WSL special handling
+    if [ "$os" = "wsl" ]; then
+        if command -v docker &> /dev/null && docker info &> /dev/null; then
+            success "Docker is accessible via WSL integration"
+            return 0
         else
-            log_error "$name failed to start"
-            return 1
-        fi
-    done
+            warn "Docker Desktop WSL integration not configured"
+            log "Please enable WSL integration in Docker Desktop settings:"
+            log "1. Open Docker Desktop on Windows"
+            log "2. Go to Settings → Resources → WSL Integration"
+            log "3. Enable integration with your WSL distro"
+            log "4. Apply & Restart Docker Desktop"
+        return 1
+    fi
+    fi
     
-    log_success "All Docker services are running"
+    if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+        success "Docker and Docker Compose are already installed"
+        return 0
+    fi
+    
+    case $os in
+        "ubuntu")
+            # Remove old versions
+            sudo apt remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+            
+            # Install dependencies
+            sudo apt update
+            sudo apt install -y ca-certificates curl gnupg lsb-release
+            
+            # Add Docker GPG key
+            sudo mkdir -p /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            
+            # Set up repository
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+                sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            
+            # Install Docker
+            sudo apt update
+            sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+            
+            # Add user to docker group
+            sudo usermod -aG docker $USER
+            
+            # Start Docker
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            
+            success "Docker installed. Please log out and back in for group changes."
+            ;;
+        "macos")
+            error "Please install Docker Desktop for Mac from https://docker.com"
+            return 1
+            ;;
+        *)
+            error "Unsupported OS for automatic Docker installation"
+            return 1
+            ;;
+    esac
 }
 
-# Function to initialize Kafka topics
-initialize_kafka_topics() {
-    log_step "Initializing Kafka topics..."
+# ==============================================================================
+# Install Utilities
+# ==============================================================================
+install_utilities() {
+    header "Installing utilities"
     
-    cd "$DOCKER_DIR"
+    local os=$(detect_os)
+    case $os in
+        "ubuntu"|"wsl")
+            sudo apt install -y jq curl wget git tree unzip
+            ;;
+        "macos")
+            brew install jq curl wget git tree unzip 2>/dev/null || true
+            ;;
+    esac
     
-    # Wait a bit more for Kafka to be fully ready
-    sleep 15
+    # Install MinIO client if not present
+    if ! command -v mc &> /dev/null; then
+        log "Installing MinIO client (mc)..."
+        curl -sSL "$MINIO_CLIENT_URL" -o /tmp/mc
+        chmod +x /tmp/mc
+        sudo mv /tmp/mc /usr/local/bin/mc
+        success "MinIO client installed"
+    fi
     
-    # Run the topic initialization script
-    if [ -f "init-kafka-topics.sh" ]; then
-        chmod +x init-kafka-topics.sh
-        ./init-kafka-topics.sh
-    else
-        log_warning "init-kafka-topics.sh not found, creating topics manually..."
+    success "Utilities installed"
+}
+
+# ==============================================================================
+# Download MQTT Kafka Connector
+# ==============================================================================
+download_mqtt_connector() {
+    header "Downloading Kafka Connect MQTT Connector"
+    
+    local download_url="${STREAM_REACTOR_BASE_URL}/${CONNECTOR_VERSION}/kafka-connect-mqtt-${CONNECTOR_VERSION}.zip"
+    local plugins_dir="$DOCKER_DIR/kafka-connect/plugins"
+    local jar_name="kafka-connect-mqtt-assembly-${CONNECTOR_VERSION}.jar"
+    
+    # Check if already exists
+    if [ -f "$plugins_dir/$jar_name" ]; then
+        success "MQTT connector already installed"
+        return 0
+    fi
+    
+    mkdir -p "$plugins_dir"
+    
+    log "Downloading connector v${CONNECTOR_VERSION}..."
+    local temp_dir=$(mktemp -d)
+    
+    if curl -L -o "$temp_dir/connector.zip" "$download_url"; then
+        cd "$temp_dir"
+        unzip -q connector.zip
         
-        # Create essential topics
-        local topics=("smartstar-events" "sensors.temperature" "sensors.air_quality" "sensors.motion")
+        # Find and copy assembly JAR
+        local assembly_jar=$(find . -name "*assembly*.jar" -type f | head -n 1)
+        if [ -n "$assembly_jar" ]; then
+            cp "$assembly_jar" "$plugins_dir/$jar_name"
+            success "MQTT connector installed to $plugins_dir"
+        else
+            warn "Assembly JAR not found in downloaded package"
+        fi
+        
+        cd - > /dev/null
+    else
+        error "Failed to download connector"
+    fi
+    
+    rm -rf "$temp_dir"
+}
+
+# ==============================================================================
+# Create Kafka topics
+# ==============================================================================
+create_kafka_topics() {
+    header "Creating Kafka topics"
+    
+    local topics=(
+        "sensors.temperature"
+        "sensors.motion"
+        "sensors.air_quality"
+        "sensors.smart_meter"
+        "sensors.weather"
+        "sensors.vehicle"
+        "events.user"
+        "events.system"
+    )
+    
         for topic in "${topics[@]}"; do
-            docker exec smartstar-kafka-broker /opt/kafka/bin/kafka-topics.sh \
+        log "Creating topic: $topic"
+        docker exec smartstar-kafka /opt/kafka/bin/kafka-topics.sh \
                 --bootstrap-server localhost:9092 \
                 --create \
                 --topic "$topic" \
                 --partitions 3 \
                 --replication-factor 1 \
-                --if-not-exists
-        done
+            --if-not-exists 2>/dev/null || true
+    done
+    
+    success "Kafka topics created"
+    
+    # List topics
+    log "Listing Kafka topics:"
+    docker exec smartstar-kafka /opt/kafka/bin/kafka-topics.sh \
+        --bootstrap-server localhost:9092 --list 2>/dev/null || true
+}
+
+# ==============================================================================
+# Create MinIO buckets
+# ==============================================================================
+create_minio_buckets() {
+    header "Creating MinIO buckets"
+    
+    # Wait for MinIO
+    local max_attempts=30
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if curl -sf "$MINIO_ENDPOINT/minio/health/live" &>/dev/null; then
+            break
+        fi
+        sleep 1
+        ((attempt++))
+    done
+    
+    # Create buckets
+    docker exec smartstar-minio sh -c "
+        mc alias set local http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY 2>/dev/null
+        mc mb --ignore-existing local/smartstar 2>/dev/null
+        mc mb --ignore-existing local/bronze 2>/dev/null
+        mc mb --ignore-existing local/silver 2>/dev/null
+        mc mb --ignore-existing local/gold 2>/dev/null
+        mc mb --ignore-existing local/checkpoints 2>/dev/null
+    " 2>/dev/null || true
+    
+    success "MinIO buckets created"
+}
+
+# ==============================================================================
+# Initialize MQTT Connector
+# ==============================================================================
+init_mqtt_connector() {
+    header "Initializing MQTT Kafka Connector"
+    
+    local connector_name="mqtt-source-sensors"
+    
+    # Wait for Kafka Connect
+    log "Waiting for Kafka Connect..."
+    local max_attempts=60
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if curl -sf "$KAFKA_CONNECT_URL/" &>/dev/null; then
+            success "Kafka Connect is ready"
+            break
+        fi
+        sleep 2
+        ((attempt++))
+    done
+    
+    if [ $attempt -gt $max_attempts ]; then
+        error "Kafka Connect not ready after timeout"
+        return 1
     fi
     
-    log_success "Kafka topics initialized"
+    # Delete existing connector
+    curl -sf -X DELETE "$KAFKA_CONNECT_URL/connectors/$connector_name" &>/dev/null || true
+    sleep 2
+    
+    # Create connector
+    log "Creating MQTT source connector..."
+    
+    # Build JSON payload (escaping backticks for KCQL)
+    local payload
+    payload=$(cat <<EOF
+{
+    "name": "$connector_name",
+    "config": {
+        "connector.class": "io.lenses.streamreactor.connect.mqtt.source.MqttSourceConnector",
+        "tasks.max": "1",
+        "connect.mqtt.hosts": "tcp://smartstar-mosquitto:1883",
+        "connect.mqtt.service.quality": "1",
+        "connect.mqtt.client.id": "kafka-connect-mqtt-sensors",
+        "connect.mqtt.connection.timeout": "30000",
+        "connect.mqtt.connection.keep.alive": "60000",
+        "connect.mqtt.connection.clean.session": "true",
+        "connect.mqtt.kcql": "INSERT INTO sensors.temperature SELECT * FROM sensors/temperature/+ WITHKEY(device_id, timestamp); INSERT INTO sensors.air_quality SELECT * FROM sensors/air_quality/+ WITHKEY(device_id, timestamp); INSERT INTO sensors.motion SELECT * FROM sensors/motion/+ WITHKEY(device_id, timestamp);",
+        "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+        "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
+        "key.converter.schemas.enable": "false",
+        "value.converter.schemas.enable": "false"
+    }
 }
-
-# Function to build Spark applications
-build_spark_applications() {
-    log_step "Building Spark applications..."
-    
-    cd "$SPARK_APPS_DIR"
-    
-    # Make build script executable
-    chmod +x scripts/build.sh
-    
-    # Run the build script
-    log_info "Running SBT build process..."
-    ./scripts/build.sh
-    
-    log_success "Spark applications built successfully"
-}
-
-# Function to run tests
-run_tests() {
-    log_step "Running application tests..."
-    
-    cd "$SPARK_APPS_DIR"
-    
-    # Make test script executable
-    chmod +x scripts/test.sh
-    
-    # Run tests (but don't fail the setup if tests fail)
-    log_info "Running test suite..."
-    if ./scripts/test.sh; then
-        log_success "All tests passed"
-    else
-        log_warning "Some tests failed, but continuing with setup"
-    fi
-}
-
-# Function to generate sample data
-generate_sample_data() {
-    log_step "Generating sample data..."
-    
-    cd "$SPARK_APPS_DIR/scripts"
-    
-    # Make the data generator executable
-    chmod +x sensor-data.generator.py
-    
-    # Generate sample data for 30 seconds
-    log_info "Generating IoT sensor data for 30 seconds..."
-    if command_exists python3; then
-        python3 sensor-data.generator.py --broker localhost --port 1883 --type sensors --duration 30 --devices 5 &
-        local data_gen_pid=$!
-        
-        # Wait for data generation to complete
-        wait $data_gen_pid
-        
-        log_success "Sample data generated"
-    else
-        log_warning "Python 3 not available, skipping data generation"
-    fi
-}
-
-# Function to run example jobs
-run_example_jobs() {
-    log_step "Running example Spark jobs..."
-    
-    cd "$SPARK_APPS_DIR"
-    
-    # Make run-job script executable
-    chmod +x scripts/run-job.sh
-    
-    # Create sample input directories
-    mkdir -p data/input data/output
-    
-    # Create some sample CSV data for testing
-    cat > data/input/sample_data.csv << 'EOF'
-id,name,value,timestamp
-1,sensor_001,23.5,2024-01-01T10:00:00Z
-2,sensor_002,24.1,2024-01-01T10:01:00Z
-3,sensor_003,22.8,2024-01-01T10:02:00Z
 EOF
+)
     
-    log_info "Testing file ingestion job..."
-    if ./scripts/run-job.sh ingestion com.smartstar.ingestion.batch.FileIngestionJob data/input data/output 2>/dev/null || true; then
-        log_success "Ingestion job completed"
-    else
-        log_warning "Ingestion job had issues, but setup continues"
-    fi
+    curl -sf -X POST -H "Content-Type: application/json" \
+        -d "$payload" "$KAFKA_CONNECT_URL/connectors" &>/dev/null && \
+        success "MQTT connector created" || warn "Failed to create connector (plugin may be missing)"
     
-    # Test other jobs if available
-    log_info "Testing streaming job (this may timeout, which is expected)..."
-    timeout 10s ./scripts/run-job.sh ingestion com.smartstar.ingestion.streaming.KafkaStreamingJob smartstar-events data/streaming-output 2>/dev/null || true
-    log_info "Streaming job test completed"
+    # Show status
+    sleep 3
+    log "Connector status:"
+    curl -sf "$KAFKA_CONNECT_URL/connectors/$connector_name/status" 2>/dev/null | jq '.' 2>/dev/null || \
+        curl -sf "$KAFKA_CONNECT_URL/connectors" 2>/dev/null || true
 }
 
-# Function to show status and next steps
-show_status_and_next_steps() {
-    log_step "Development Environment Status"
+# ==============================================================================
+# Environment Health Check
+# ==============================================================================
+check_health() {
+    header "Environment Health Check"
     
-    echo -e "\n${GREEN}🎉 SmartStar Development Environment Setup Complete!${NC}\n"
+    local errors=0
     
-    echo -e "${BLUE}📊 Service Status:${NC}"
-    
-    # Check Docker services
-    if docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep smartstar; then
-        echo ""
+    # Check Java
+    if command -v java &> /dev/null; then
+        success "Java: $(java -version 2>&1 | head -n1)"
     else
-        log_warning "No SmartStar containers found"
+        error "Java not found"
+        ((errors++))
     fi
     
-    echo -e "\n${BLUE}🌐 Service URLs:${NC}"
-    echo -e "  • Kafka UI: ${GREEN}http://localhost:8080${NC}"
-    echo -e "  • Kafka Connect: ${GREEN}http://localhost:8083${NC}"
-    echo -e "  • MinIO Console: ${GREEN}http://localhost:9001${NC}"
-    echo -e "  • PostgreSQL: ${GREEN}localhost:5432${NC} (smartstar/smartstar)"
-    echo -e "  • MQTT Broker: ${GREEN}localhost:1883${NC}"
+    # Check Scala
+    if command -v scala &> /dev/null; then
+        success "Scala: $(scala -version 2>&1 | head -n1)"
+    else
+        warn "Scala not found (optional)"
+    fi
     
-    echo -e "\n${BLUE}🚀 Next Steps:${NC}"
-    echo -e "1. Explore the Kafka UI at ${GREEN}http://localhost:8080${NC}"
-    echo -e "2. Generate more data:"
-    echo -e "   ${YELLOW}cd spark-apps/scripts && python3 sensor-data.generator.py --type all --duration 60${NC}"
-    echo -e "3. Run Spark jobs:"
-    echo -e "   ${YELLOW}cd spark-apps && ./scripts/run-job.sh ingestion com.smartstar.ingestion.batch.FileIngestionJob input/ output/${NC}"
-    echo -e "4. Monitor logs:"
-    echo -e "   ${YELLOW}docker-compose logs -f kafka${NC}"
-    echo -e "5. Stop environment:"
-    echo -e "   ${YELLOW}cd spark-apps/docker && $DOCKER_COMPOSE -f docker-compose-dev.yml down${NC}"
+    # Check SBT
+    if command -v sbt &> /dev/null; then
+        success "SBT: installed"
+    else
+        warn "SBT not found (optional)"
+    fi
     
-    echo -e "\n${BLUE}📚 Documentation:${NC}"
-    echo -e "  • Project README: ${GREEN}./README.md${NC}"
-    echo -e "  • Spark Apps: ${GREEN}./spark-apps/README.md${NC}"
-    echo -e "  • Example Jobs: ${GREEN}./spark-apps/scripts/run-job.sh${NC}"
+    # Check Python
+    if command -v python3 &> /dev/null; then
+        success "Python: $(python3 --version)"
+    else
+        warn "Python 3 not found"
+    fi
     
-    echo -e "\n${GREEN}✅ Environment is ready for development!${NC}\n"
+    # Check Docker
+    if command -v docker &> /dev/null && docker info &> /dev/null; then
+        success "Docker: $(docker --version)"
+    else
+        error "Docker not accessible"
+        ((errors++))
+    fi
+    
+    # Check Docker Compose
+    if docker compose version &> /dev/null; then
+        success "Docker Compose: $(docker compose version --short)"
+    else
+        error "Docker Compose not found"
+        ((errors++))
+    fi
+    
+    if [ $errors -eq 0 ]; then
+        success "Health check passed!"
+        return 0
+    else
+        error "Health check failed with $errors errors"
+        return 1
+    fi
 }
 
-# Main function
-main() {
-    echo -e "${BLUE}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║              SmartStar Development Environment Setup         ║"
-    echo "║                        Version 1.0.0                        ║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}\n"
+# ==============================================================================
+# Wait for services
+# ==============================================================================
+wait_for_services() {
+    header "Waiting for services to be healthy"
     
-    log_info "Detected OS: $(detect_os)"
-    log_info "Script directory: $SCRIPT_DIR"
-    log_info "Spark apps directory: $SPARK_APPS_DIR"
+    local services=("smartstar-kafka" "smartstar-postgres" "smartstar-minio" "smartstar-mosquitto")
+    local max_wait=120
     
-    # Check if we're in the right directory
-    if [ ! -d "$SPARK_APPS_DIR" ]; then
-        log_error "spark-apps directory not found. Please run this script from the SmartStar root directory."
-        exit 1
+    for svc in "${services[@]}"; do
+        log "Waiting for $svc..."
+        local elapsed=0
+        while [ $elapsed -lt $max_wait ]; do
+            if docker inspect --format='{{.State.Health.Status}}' "$svc" 2>/dev/null | grep -q "healthy"; then
+                success "$svc is healthy"
+                break
+            elif docker inspect --format='{{.State.Status}}' "$svc" 2>/dev/null | grep -q "running"; then
+                success "$svc is running"
+                break
+            fi
+            sleep 2
+            ((elapsed+=2))
+        done
+    done
+}
+
+# ==============================================================================
+# Start services
+# ==============================================================================
+start_services() {
+    header "Starting SmartStar Docker Services"
+    
+    preflight_check
+    
+    # Download MQTT connector before starting (so Kafka Connect loads it on startup)
+    download_mqtt_connector
+    
+    local compose_cmd=$(get_compose_cmd)
+    
+    log "Pulling latest images..."
+    $compose_cmd -f "$COMPOSE_FILE" -p "$PROJECT_NAME" pull --quiet 2>/dev/null || true
+    
+    log "Starting services..."
+    $compose_cmd -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d
+    
+    wait_for_services
+    create_kafka_topics
+    create_minio_buckets
+    
+    show_status
+    show_urls
+}
+
+# ==============================================================================
+# Stop services
+# ==============================================================================
+stop_services() {
+    header "Stopping SmartStar services"
+    local compose_cmd=$(get_compose_cmd)
+    $compose_cmd -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
+    success "All services stopped"
+}
+
+# ==============================================================================
+# Show status
+# ==============================================================================
+show_status() {
+    header "Service Status"
+    docker ps --filter "name=smartstar" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || \
+    $(get_compose_cmd) -f "$COMPOSE_FILE" -p "$PROJECT_NAME" ps
+}
+
+# ==============================================================================
+# Show logs
+# ==============================================================================
+show_logs() {
+    $(get_compose_cmd) -f "$COMPOSE_FILE" -p "$PROJECT_NAME" logs -f
+}
+
+# ==============================================================================
+# Clean everything
+# ==============================================================================
+clean_all() {
+    header "Cleaning SmartStar environment"
+    warn "This will remove all containers, volumes, and data!"
+    read -p "Are you sure? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        local compose_cmd=$(get_compose_cmd)
+        $compose_cmd -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down -v --remove-orphans
+        
+        # Clean up any leftover processes on ports
+        log "Checking for processes on service ports..."
+        for port in 1883 5432 8080 8083 9000 9001 9092 9094; do
+            local pid=$(sudo lsof -ti ":$port" 2>/dev/null || true)
+            if [ -n "$pid" ]; then
+                log "Killing process $pid on port $port"
+                sudo kill -9 "$pid" 2>/dev/null || true
+            fi
+        done
+        
+        success "Environment cleaned"
+    else
+        log "Cancelled"
+    fi
+}
+
+# ==============================================================================
+# Full Setup (install deps + start)
+# ==============================================================================
+full_setup() {
+    header "Running Full Setup"
+    
+    local os=$(detect_os)
+    log "Detected OS: $os"
+    
+    # Update system (Ubuntu/WSL only)
+    if [ "$os" = "ubuntu" ] || [ "$os" = "wsl" ]; then
+        log "Updating system packages..."
+        sudo apt update && sudo apt upgrade -y
     fi
     
     # Install prerequisites
-    log_step "Installing Prerequisites"
+    install_utilities
     install_java
     install_scala  
     install_sbt
+    install_python
     install_docker
-    install_python_deps
     
-    # Optional: Install Spark locally
-    if [[ "${INSTALL_SPARK:-yes}" == "yes" ]]; then
-        install_spark
+    # Source bashrc for new PATH entries
+    source ~/.bashrc 2>/dev/null || true
+    
+    # Health check
+    if ! check_health; then
+        warn "Some components missing, but continuing..."
     fi
-    
-    # Setup Docker environment
-    setup_docker_environment
     
     # Start Docker services
-    start_docker_services
+    start_services
     
-    # Initialize Kafka
-    initialize_kafka_topics
-    
-    # Build applications
-    build_spark_applications
-    
-    # Run tests
-    run_tests
-    
-    # Generate sample data
-    if [[ "${GENERATE_DATA:-yes}" == "yes" ]]; then
-        generate_sample_data
-    fi
-    
-    # Run example jobs
-    if [[ "${RUN_EXAMPLES:-yes}" == "yes" ]]; then
-        run_example_jobs
-    fi
-    
-    # Show final status
-    show_status_and_next_steps
+    success "Full setup completed!"
 }
 
-# Handle script arguments
-case "${1:-}" in
-    --help|-h)
-        echo "SmartStar Development Environment Setup Script"
+# ==============================================================================
+# Complete Setup (full + connectors)
+# ==============================================================================
+complete_setup() {
+    full_setup
+    
+    header "Initializing Connectors"
+    
+    # Wait for Kafka Connect to be fully ready with plugins loaded
+    log "Waiting for Kafka Connect to load plugins..."
+    sleep 15
+    
+    # Initialize MQTT connector
+    init_mqtt_connector
+    
+    success "Complete setup finished! Environment is ready."
+}
+
+# ==============================================================================
+# Show URLs
+# ==============================================================================
+show_urls() {
         echo ""
-        echo "Usage: $0 [options]"
+    echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}${GREEN}  🚀 SmartStar Development Environment Ready!${NC}"
+    echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        echo "Options:"
-        echo "  --help, -h              Show this help message"
-        echo "  --skip-spark            Skip local Spark installation"
-        echo "  --skip-data             Skip sample data generation"
-        echo "  --skip-examples         Skip running example jobs"
+    echo -e "${BOLD}Service URLs:${NC}"
+    echo -e "  ${CYAN}Kafka UI${NC}        → ${GREEN}http://localhost:8080${NC}"
+    echo -e "  ${CYAN}Schema Registry${NC} → ${GREEN}http://localhost:8081${NC}"
+    echo -e "  ${CYAN}MinIO Console${NC}   → ${GREEN}http://localhost:9001${NC}  (minioadmin / minioadmin)"
+    echo -e "  ${CYAN}Kafka Connect${NC}   → ${GREEN}http://localhost:8083${NC}"
         echo ""
-        echo "Environment Variables:"
-        echo "  INSTALL_SPARK=no        Skip Spark installation"
-        echo "  GENERATE_DATA=no        Skip data generation"
-        echo "  RUN_EXAMPLES=no         Skip example jobs"
+    echo -e "${BOLD}Connection Endpoints:${NC}"
+    echo -e "  ${CYAN}Kafka${NC}           → ${GREEN}localhost:9094${NC}"
+    echo -e "  ${CYAN}PostgreSQL${NC}      → ${GREEN}localhost:5432${NC}  (smartstar / smartstar)"
+    echo -e "  ${CYAN}MQTT${NC}            → ${GREEN}localhost:1883${NC}"
+    echo -e "  ${CYAN}MinIO S3${NC}        → ${GREEN}localhost:9000${NC}"
         echo ""
-        exit 0
-        ;;
-    --skip-spark)
-        export INSTALL_SPARK="no"
-        ;;
-    --skip-data)
-        export GENERATE_DATA="no"
-        ;;
-    --skip-examples)
-        export RUN_EXAMPLES="no"
+    echo -e "${BOLD}Quick Commands:${NC}"
+    echo -e "  ${YELLOW}./setup-dev-env.sh status${NC}  - Check service status"
+    echo -e "  ${YELLOW}./setup-dev-env.sh logs${NC}    - View logs"
+    echo -e "  ${YELLOW}./setup-dev-env.sh stop${NC}    - Stop services"
+    echo -e "  ${YELLOW}./setup-dev-env.sh clean${NC}   - Remove everything"
+    echo ""
+    echo -e "${BOLD}Generate Test Data:${NC}"
+    echo -e "  ${YELLOW}python3 spark-apps/dev-tools/sensor-data.generator.py --broker localhost --port 1883 --duration 60${NC}"
+    echo ""
+}
+
+# ==============================================================================
+# Test individual function
+# ==============================================================================
+test_function() {
+    local func_name="${1:-}"
+    
+    if [ -z "$func_name" ]; then
+        echo ""
+        log "Available functions to test:"
+        echo "  1) install_java"
+        echo "  2) install_scala"
+        echo "  3) install_sbt"
+        echo "  4) install_python"
+        echo "  5) install_docker"
+        echo "  6) install_utilities"
+        echo "  7) create_kafka_topics"
+        echo "  8) create_minio_buckets"
+        echo "  9) init_mqtt_connector"
+        echo " 10) download_mqtt_connector"
+        echo " 11) check_health"
+        echo ""
+        read -p "Select function (1-11) or type name: " choice
+        
+        case $choice in
+            1|install_java) install_java ;;
+            2|install_scala) install_scala ;;
+            3|install_sbt) install_sbt ;;
+            4|install_python) install_python ;;
+            5|install_docker) install_docker ;;
+            6|install_utilities) install_utilities ;;
+            7|create_kafka_topics) create_kafka_topics ;;
+            8|create_minio_buckets) create_minio_buckets ;;
+            9|init_mqtt_connector) init_mqtt_connector ;;
+            10|download_mqtt_connector) download_mqtt_connector ;;
+            11|check_health) check_health ;;
+            *) error "Unknown function: $choice" ;;
+        esac
+    else
+        # Direct function call
+        if declare -f "$func_name" > /dev/null; then
+            $func_name
+        else
+            error "Unknown function: $func_name"
+            exit 1
+        fi
+    fi
+}
+
+# ==============================================================================
+# Interactive Menu
+# ==============================================================================
+show_menu() {
+    echo ""
+    echo -e "${BOLD}${CYAN}SmartStar Development Environment${NC}"
+    echo ""
+    echo "  1) start     - Start Docker services only"
+    echo "  2) setup     - Full setup (install deps + start services)"
+    echo "  3) complete  - Complete setup (full + connectors)"
+    echo "  4) stop      - Stop all services"
+    echo "  5) status    - Show service status"
+    echo "  6) health    - Check environment health"
+    echo "  7) clean     - Remove everything"
+    echo "  8) test      - Test individual function"
+    echo "  9) exit      - Exit"
+    echo ""
+    read -p "Select option (1-9): " -n 1 -r
+    echo ""
+    
+    case $REPLY in
+        1) start_services ;;
+        2) full_setup ;;
+        3) complete_setup ;;
+        4) stop_services ;;
+        5) show_status ;;
+        6) check_health ;;
+        7) clean_all ;;
+        8) test_function ;;
+        9) exit 0 ;;
+        *) error "Invalid option" ;;
+    esac
+}
+
+# ==============================================================================
+# Banner
+# ==============================================================================
+show_banner() {
+    echo -e "${CYAN}"
+    cat << 'EOF'
+   _____ __  __          _____ _______  _____ _______       _____  
+  / ____|  \/  |   /\   |  __ \__   __|/ ____|__   __|/\   |  __ \ 
+ | (___ | \  / |  /  \  | |__) | | |  | (___    | |  /  \  | |__) |
+  \___ \| |\/| | / /\ \ |  _  /  | |   \___ \   | | / /\ \ |  _  / 
+  ____) | |  | |/ ____ \| | \ \  | |   ____) |  | |/ ____ \| | \ \ 
+ |_____/|_|  |_/_/    \_\_|  \_\ |_|  |_____/   |_/_/    \_\_|  \_\
+                                                                    
+EOF
+    echo -e "${NC}"
+    echo -e "${BOLD}IoT Data Platform - Development Environment${NC}"
+    echo ""
+}
+
+# ==============================================================================
+# Main
+# ==============================================================================
+main() {
+    cd "$SCRIPT_DIR"
+    
+    case "${1:-}" in
+        start|up)
+            show_banner
+            start_services
+            ;;
+        stop|down)
+            stop_services
+            ;;
+        restart)
+            stop_services
+            start_services
+            ;;
+        status|ps)
+            show_status
+            ;;
+        logs)
+            show_logs
+            ;;
+        clean|destroy)
+            clean_all
+            ;;
+        setup)
+            show_banner
+            full_setup
+            ;;
+        complete|all)
+            show_banner
+            complete_setup
+            ;;
+        health|check)
+            check_health
+            ;;
+        test)
+            test_function "${2:-}"
+            ;;
+        urls)
+            show_urls
+            ;;
+        -h|--help|help)
+            show_banner
+            echo "Usage: $0 [command]"
+            echo ""
+            echo "Commands:"
+            echo "  start      Start Docker services only (quick)"
+            echo "  setup      Full setup (install deps + start)"
+            echo "  complete   Complete setup (full + connectors)"
+            echo "  stop       Stop all services"
+            echo "  restart    Restart all services"
+            echo "  status     Show service status"
+            echo "  logs       Tail service logs"
+            echo "  clean      Stop and remove all data"
+            echo "  health     Check environment health"
+            echo "  test       Test individual function"
+            echo "  urls       Show service URLs"
+            echo "  help       Show this help"
+            echo ""
+            echo "Examples:"
+            echo "  $0                    # Interactive menu"
+            echo "  $0 start              # Quick start services"
+            echo "  $0 setup              # Full setup with deps"
+            echo "  $0 test install_java  # Test single function"
+            echo ""
+            ;;
+        "")
+            # No argument - show interactive menu
+            show_banner
+            show_menu
+            ;;
+        *)
+            error "Unknown command: $1"
+            echo "Run '$0 --help' for usage"
+            exit 1
         ;;
 esac
+}
 
-# Run main function
 main "$@"

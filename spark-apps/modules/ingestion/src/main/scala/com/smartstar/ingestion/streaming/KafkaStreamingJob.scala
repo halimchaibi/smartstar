@@ -46,14 +46,18 @@ class KafkaStreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
   private def readFromKafka(): DataFrame = {
     val topics = getString("kafka.topics")
     val kafkaBootstrapServers = getString("kafka.bootstrap-servers")
+    val startingOffsets = scala.util.Try(getString("kafka.starting-offsets")).getOrElse("earliest")
     
     logInfo(s"Reading from Kafka topic: $topics")
+    logInfo(s"Kafka bootstrap servers: $kafkaBootstrapServers")
+    logInfo(s"Starting offsets: $startingOffsets")
 
     spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", kafkaBootstrapServers)
       .option("subscribe", topics)
-      .option("startingOffsets", "latest")
+      .option("startingOffsets", startingOffsets)
+      .option("failOnDataLoss", "false")
       .load()
   }
 

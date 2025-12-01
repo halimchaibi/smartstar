@@ -1,457 +1,434 @@
-# SmartStar - Complete Data Platform
+# SmartStar - IoT Data Platform
 
-A comprehensive enterprise data platform built with Apache Spark and Scala, featuring data ingestion, normalization, and advanced analytics capabilities.
+A comprehensive data lakehouse platform for IoT sensor data, built with Apache Spark, Kafka, and the Medallion Architecture (Bronze → Silver → Gold).
 
-## 🚀 Features
+## 🎯 Overview
 
-- **Data Ingestion**: Batch and streaming ingestion from multiple sources
-- **Data Normalization**: Automated data cleansing, validation, and transformation
-- **Analytics**: Advanced analytics, machine learning, and real-time processing
-- **API Services**: RESTful APIs for data access, metadata management, and monitoring
-- **Web UI**: Interactive dashboards, admin panels, and data exploration interfaces
-- **Workflow Orchestration**: Multiple orchestration engines (Airflow, Argo, Prefect)
-- **Infrastructure as Code**: Terraform and Kubernetes deployment automation
-- **Comprehensive Monitoring**: Full observability with metrics, logs, and tracing
-- **Testing Framework**: End-to-end, integration, performance, and data quality testing
-- **Development Tools**: CI/CD pipelines, code quality tools, and local development setup
-- **Modular Architecture**: Clean separation of concerns with reusable components
-- **Production Ready**: Enterprise-grade configurations and monitoring
+SmartStar is designed to process high-volume IoT sensor data through a modern streaming architecture:
+
+```
+IoT Sensors → MQTT → Kafka → Spark → Iceberg Tables → Analytics
+              ↑                         ↑
+          Mosquitto              MinIO (S3-compatible)
+```
+
+## ✨ Features
+
+- **Real-time IoT Data Ingestion**: MQTT → Kafka streaming pipeline
+- **Medallion Architecture**: Bronze (raw), Silver (cleansed), Gold (aggregated)
+- **Schema Management**: Confluent Schema Registry (Avro, JSON Schema, Protobuf)
+- **Data Lakehouse**: Apache Iceberg tables on MinIO (S3-compatible)
+- **Spark 4.0 + Spark Connect**: Modern distributed processing
+- **One-Click Dev Environment**: Complete Docker-based development stack
+- **Comprehensive Monitoring**: Kafka UI, MinIO Console, health checks
 
 ## 📁 Project Structure
 
 ```
 smartstar/
-├── spark-apps/                    # Scala Spark applications
-│   ├── modules/
-│   │   ├── common/                # Shared utilities and configurations
-│   │   ├── ingestion/             # Data ingestion jobs
-│   │   ├── normalization/         # Data cleansing and transformation
-│   │   └── analytics/             # Analytics and ML workloads
-│   ├── scripts/                   # Build and deployment scripts
-│   ├── config/                    # Spark app configurations
-│   │   ├── environments/          # Environment-specific configs
-│   │   └── modules/               # Module-specific configs
-│   └── docker/                    # Docker development environment
-├── api-services/                  # REST APIs and microservices
-│   ├── data-api/                  # Data access and query API
-│   ├── metadata-api/              # Data catalog and metadata service
-│   └── monitoring-api/            # Monitoring and metrics API
-├── web-ui/                        # Web-based user interfaces
-│   ├── admin-panel/               # Administrative interface
-│   ├── dashboard/                 # Analytics and monitoring dashboard
-│   └── data-explorer/             # Interactive data exploration UI
-├── data-pipelines/                # Workflow orchestration
-│   ├── airflow/                   # Apache Airflow DAGs and configs
-│   ├── argo-workflows/            # Kubernetes-native workflows
-│   └── prefect/                   # Modern workflow orchestration
-├── infrastructure/                # Infrastructure as Code
-│   ├── terraform/                 # Terraform modules and environments
-│   ├── kubernetes/                # K8s manifests, Helm charts, operators
-│   └── docker/                    # Container configurations
-├── monitoring/                    # Observability stack
-│   ├── prometheus/                # Metrics collection and alerting
-│   ├── grafana/                   # Dashboards and visualization
-│   ├── jaeger/                    # Distributed tracing
-│   └── elasticsearch/             # Log aggregation and search
-├── tests/                         # Testing infrastructure
-│   ├── e2e/                       # End-to-end tests
-│   ├── integration/               # Integration tests
-│   ├── performance/               # Performance and load tests
-│   └── data-quality/              # Data quality validation tests
-├── tools/                         # Development and operational tools
-│   ├── ci-cd/                     # CI/CD pipeline configurations
-│   ├── code-quality/              # Linting, formatting, analysis tools
-│   └── local-dev/                 # Local development environment setup
-├── scripts/                       # Utility and automation scripts
-│   ├── setup/                     # Environment setup scripts
-│   ├── deployment/                # Deployment automation
-│   └── utilities/                 # General utility scripts
-└── docs/                          # Documentation
-    ├── architecture/              # System design and architecture docs
-    ├── api/                       # API documentation
-    ├── deployment/                # Deployment guides
-    └── user-guides/               # User manuals and tutorials
+├── setup-dev-env.sh              # 🚀 One-click dev environment setup
+├── infrastructure/
+│   └── docker/
+│       ├── docker-compose.yml    # All services (Kafka, MinIO, etc.)
+│       ├── mosquitto/            # MQTT broker config
+│       ├── postgres/             # PostgreSQL init scripts
+│       └── kafka-connect/        # Connectors and plugins
+├── spark-apps/                   # Scala Spark applications
+│   ├── common/                   # Shared utilities
+│   ├── ingestion-app/            # Kafka → Bronze layer
+│   ├── normalization-app/        # Bronze → Silver layer
+│   ├── analytics-app/            # Silver → Gold layer
+│   └── dev-tools/                # Development utilities
+│       └── sensor-data.generator.py  # IoT data simulator
+├── scripts/                      # Utility scripts
+├── api-services/                 # REST APIs
+├── data-pipelines/               # Airflow, Argo, Prefect
+├── monitoring/                   # Prometheus, Grafana, Jaeger
+├── tests/                        # E2E, integration, performance tests
+└── docs/                         # Documentation
 ```
 
 ## 🛠️ Prerequisites
 
-### Core Requirements
-- **Java**: 8 or 11
-- **Scala**: 2.13.x
-- **SBT**: 1.9.x
-- **Apache Spark**: 3.5.x
-
-### Optional Components
-- **Docker** & **Docker Compose**: For containerized development
-- **Kubernetes**: For orchestration and deployment
-- **Terraform**: For infrastructure provisioning
-- **Node.js**: For web UI development
-- **Python**: For certain data pipeline components
+| Component | Version | Required |
+|-----------|---------|----------|
+| Docker | 24+ | ✅ Yes |
+| Docker Compose | 2.x | ✅ Yes |
+| Java | 21 | For Spark apps |
+| Scala | 2.13.x | For Spark apps |
+| SBT | 1.9.x | For building |
+| Python | 3.13+ | For data generator |
+| pyenv | Latest | Recommended |
 
 ## 🚀 Quick Start
 
-### 1. Build the Project
+### 0. Setup Python Environment (First Time)
 
 ```bash
-cd spark-apps
-./scripts/build.sh
+# The project uses Python 3.13+ with pyenv
+# A .python-version file is included
+
+# Create virtual environment
+python -m venv .venv
+
+# Activate it
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Or install just the essentials
+pip install paho-mqtt faker requests
 ```
 
-### 2. Run Example Jobs
+### 1. Start Development Environment
 
 ```bash
-# File ingestion job
-./scripts/run-job.sh ingestion com.smartstar.ingestion.batch.FileIngestionJob input/ output/
+# Clone the repository
+git clone https://github.com/your-org/smartstar.git
+cd smartstar
 
-# Data cleansing job  
-./scripts/run-job.sh normalization com.smartstar.normalization.cleaning.DataCleansingJob
-
-# Analytics aggregation job
-./scripts/run-job.sh analytics com.smartstar.analytics.batch.AggregationJob
-```
-
-### 3. Start Local Development Environment (Optional)
-
-```bash
-cd infrastructure/docker
-docker-compose up -d
+# Start all services with one command
+./setup-dev-env.sh start
 ```
 
 This starts:
-- Spark cluster (master + worker)
-- PostgreSQL database
-- Kafka + Zookeeper
+- **Kafka** (KRaft mode) - Message streaming
+- **Schema Registry** - Schema management
+- **Kafka Connect** - Connectors framework
+- **Kafka UI** - Web interface
+- **MinIO** - S3-compatible storage
+- **PostgreSQL** - Iceberg catalog
+- **Mosquitto** - MQTT broker
 
-## 🏗️ Development
+### 2. Access Services
 
-### Building Individual Modules
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Kafka UI | http://localhost:8080 | - |
+| Schema Registry | http://localhost:8081 | - |
+| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
+| Kafka Connect | http://localhost:8083 | - |
+| PostgreSQL | localhost:5432 | smartstar / smartstar |
+| MQTT Broker | localhost:1883 | - |
+| Kafka Bootstrap | localhost:9094 | - |
+
+### 3. Generate Test Data
+
+```bash
+# Activate Python virtual environment (if not already)
+source .venv/bin/activate
+
+# Generate IoT sensor data for 60 seconds
+python spark-apps/dev-tools/sensor-data.generator.py \
+    --broker localhost \
+    --port 1883 \
+    --type sensors \
+    --duration 60 \
+    --devices 5
+```
+
+### 4. Build & Run Spark Applications
 
 ```bash
 cd spark-apps
-
-# Build specific module
-sbt "project common" compile
-sbt "project ingestion" compile
-sbt "project normalization" compile  
-sbt "project analytics" compile
+sbt clean assembly
 ```
 
-### Running Tests
+See [spark-apps/README.md](spark-apps/README.md) for detailed instructions on running the Spark streaming jobs.
+
+**Quick start:**
 
 ```bash
-# All tests
-sbt test
-
-# Module-specific tests
-sbt "project common" test
+# Run Kafka → Bronze ingestion job in Docker
+docker run --rm --network smartstar \
+  -v $(pwd)/spark-apps/modules/ingestion/target/scala-2.13:/app \
+  -e AWS_ACCESS_KEY_ID=minioadmin -e AWS_SECRET_ACCESS_KEY=minioadmin \
+  -e AWS_REGION=us-east-1 -e ENV=development \
+  eclipse-temurin:21-jdk \
+  java -cp /app/smartstar-ingestion-assembly-1.0.0.jar \
+    com.smartstar.ingestion.streaming.KafkaStreamingJob
 ```
 
-### Code Quality
+## 📊 Data Pipeline
+
+### Sensor Types
+
+| Type | Metrics | Topic |
+|------|---------|-------|
+| Temperature | temperature, humidity | `sensors.temperature` |
+| Air Quality | pm25, pm10, co2, aqi | `sensors.air_quality` |
+| Motion | motion_detected, confidence | `sensors.motion` |
+| Smart Meter | power, voltage, current | `sensors.smart_meter` |
+| Weather | temperature, pressure, wind | `sensors.weather` |
+| Vehicle | speed, fuel, engine_temp | `sensors.vehicle` |
+
+### Data Flow
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   MQTT      │────▶│   Kafka     │────▶│   Bronze    │────▶│   Silver    │
+│  Sensors    │     │   Topics    │     │   (JSON)    │     │  (Parquet)  │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                           │                                       │
+                           ▼                                       ▼
+                    ┌─────────────┐                         ┌─────────────┐
+                    │   Schema    │                         │    Gold     │
+                    │  Registry   │                         │ (Iceberg)   │
+                    └─────────────┘                         └─────────────┘
+```
+
+### Storage Layout (MinIO/S3)
+
+```
+s3://smartstar/
+├── bronze/           # Raw JSON from Kafka
+│   └── sensors/
+│       └── topic=sensors.temperature/
+│           └── year=2025/month=12/day=01/
+├── silver/           # Cleansed Parquet/Iceberg
+│   └── sensors/
+└── gold/             # Aggregated analytics
+```
+
+## 🔧 Setup Commands
 
 ```bash
-# Format code
-sbt scalafmt
+# Interactive menu
+./setup-dev-env.sh
 
-# Check style
-sbt scalastyle
+# Start services only (quick)
+./setup-dev-env.sh start
+
+# Full setup (install deps + start)
+./setup-dev-env.sh setup
+
+# Complete setup (full + connectors)
+./setup-dev-env.sh complete
+
+# Stop all services
+./setup-dev-env.sh stop
+
+# Check service status
+./setup-dev-env.sh status
+
+# View logs
+./setup-dev-env.sh logs
+
+# Check environment health
+./setup-dev-env.sh health
+
+# Remove everything (volumes too)
+./setup-dev-env.sh clean
+
+# Test individual function
+./setup-dev-env.sh test create_kafka_topics
 ```
 
-### Creating Fat JARs
+## 🏗️ Building & Running Spark Jobs
+
+### Build All Modules
 
 ```bash
-# All modules
-sbt assembly
-
-# Specific module
-sbt "project ingestion" assembly
+cd spark-apps
+sbt clean assembly
 ```
 
-## 📊 Available Jobs
-
-### Ingestion Jobs
-- `FileIngestionJob`: Batch file processing (CSV, JSON, Parquet)
-- `DatabaseIngestionJob`: Database extraction via JDBC
-- `KafkaStreamingJob`: Real-time Kafka stream processing
-- `ApiIngestionJob`: REST API data extraction
-
-### Normalization Jobs
-- `DataCleansingJob`: Data quality validation and cleansing
-- `DataTransformationJob`: Schema transformation and mapping
-- `DeduplicationJob`: Duplicate record removal
-- `DataEnrichmentJob`: Reference data joining and enrichment
-
-### Analytics Jobs
-- `AggregationJob`: Time-based data aggregations
-- `FeatureEngineeringJob`: ML feature preparation
-- `ModelTrainingJob`: Machine learning model training
-- `RealTimeAnalyticsJob`: Streaming analytics and alerting
-
-## 🌐 API Services
-
-The platform provides RESTful APIs for programmatic access:
-
-### Data API (`api-services/data-api/`)
-- Query and retrieve processed data
-- Real-time data access endpoints
-- Data export functionality
-
-### Metadata API (`api-services/metadata-api/`)
-- Data catalog and schema registry
-- Lineage tracking and data discovery
-- Dataset metadata management
-
-### Monitoring API (`api-services/monitoring-api/`)
-- System health and performance metrics
-- Job status and execution monitoring
-- Alert management and notifications
-
-## 💻 Web User Interface
-
-Interactive web interfaces for platform management:
-
-### Admin Panel (`web-ui/admin-panel/`)
-- User and permission management
-- System configuration and settings
-- Resource monitoring and allocation
-
-### Analytics Dashboard (`web-ui/dashboard/`)
-- Real-time metrics and KPIs
-- Custom visualization and reporting
-- Data pipeline monitoring
-
-### Data Explorer (`web-ui/data-explorer/`)
-- Interactive data browsing and querying
-- Schema exploration and profiling
-- Ad-hoc analysis and visualization
-
-## 🔄 Workflow Orchestration
-
-Multiple orchestration engines supported:
-
-### Apache Airflow (`data-pipelines/airflow/`)
-```bash
-cd data-pipelines/airflow
-# Start Airflow webserver and scheduler
-docker-compose up -d
-```
-
-### Argo Workflows (`data-pipelines/argo-workflows/`)
-```bash
-# Deploy workflows to Kubernetes
-kubectl apply -f data-pipelines/argo-workflows/
-```
-
-### Prefect (`data-pipelines/prefect/`)
-```bash
-cd data-pipelines/prefect
-# Start Prefect server
-prefect server start
-```
-
-## ⚙️ Configuration
-
-### Environment-Specific Configs
+### Run Ingestion Job
 
 ```bash
-spark-apps/config/
-├── environments/
-│   ├── development.conf
-│   ├── test.conf
-│   ├── staging.conf
-│   └── production.conf
-├── modules/
-│   ├── analytics.conf
-│   ├── ingestion.conf
-│   └── normalization.conf
-└── common.conf
+# Using Spark Connect
+java -jar ingestion-app/target/scala-2.13/ingestion-job.jar
+
+# Or submit to Spark cluster
+spark-submit \
+    --class com.smartstar.ingestion.IngestionJob \
+    --master spark://localhost:7077 \
+    ingestion-app/target/scala-2.13/ingestion-job.jar
 ```
 
-### Application Configuration
+### Configuration
 
-Main configuration in `spark-apps/modules/common/src/main/resources/application.conf`:
+Edit `spark-apps/*/src/main/resources/application.conf`:
 
 ```hocon
-app {
-  name = "smartstar-spark-app"
-  version = "1.0.0"
+kafka {
+  bootstrap.servers = "localhost:9094"
+  topics = "sensors.temperature,sensors.motion,sensors.air_quality"
 }
 
-spark {
-  master = "local[*]"
-  executor {
-    memory = "2g" 
-    cores = 2
-  }
-}
-
-database {
-  url = "jdbc:postgresql://localhost:5432/smartstar"
-  username = "smartstar_user"
-  password = "smartstar_password"
+ingestion {
+  bronze.base.path = "s3a://smartstar/bronze/sensors"
+  checkpoint.base.path = "s3a://smartstar/checkpoints"
 }
 ```
 
-## 🚀 Deployment
+## 🔌 MQTT Kafka Connector
 
-### Local Deployment
+The platform includes a pre-configured MQTT-to-Kafka connector that bridges IoT sensor data from Mosquitto to Kafka topics.
 
-```bash
-# Build and run locally
-cd spark-apps
-./scripts/build.sh
-./scripts/run-job.sh [module] [job-class] [args...]
-```
-
-### Infrastructure Deployment
-
-#### Using Terraform
-```bash
-cd infrastructure/terraform
-terraform init
-terraform plan
-terraform apply
-```
-
-#### Using Kubernetes
-```bash
-cd infrastructure/kubernetes
-kubectl apply -f manifests/
-```
-
-#### Using Helm Charts
-```bash
-cd infrastructure/kubernetes/helm-charts
-helm install smartstar ./smartstar-chart
-```
-
-### Cluster Deployment
+### Connector Status
 
 ```bash
-# Submit to YARN cluster
-spark-submit \
-  --class com.smartstar.ingestion.batch.FileIngestionJob \
-  --master yarn \
-  --deploy-mode cluster \
-  target/scala-2.13/smartstar-ingestion-assembly-1.0.0.jar \
-  s3://input-bucket/ s3://output-bucket/
+# Check connector status
+curl -s http://localhost:8083/connectors/mqtt-source-sensors/status | jq
+
+# List all connectors
+curl -s http://localhost:8083/connectors | jq
 ```
 
-### Docker Deployment
+### Connector Configuration
+
+| Setting | Value |
+|---------|-------|
+| Name | `mqtt-source-sensors` |
+| MQTT Broker | `tcp://smartstar-mosquitto:1883` |
+| Source Topics | `sensors/temperature/+`, `sensors/air_quality/+`, `sensors/motion/+` |
+| Kafka Topics | `sensors.temperature`, `sensors.air_quality`, `sensors.motion` |
+
+### Manage Connector
 
 ```bash
-cd infrastructure/docker
-docker-compose up -d
+# Pause connector
+curl -X PUT http://localhost:8083/connectors/mqtt-source-sensors/pause
+
+# Resume connector
+curl -X PUT http://localhost:8083/connectors/mqtt-source-sensors/resume
+
+# Restart connector
+curl -X POST http://localhost:8083/connectors/mqtt-source-sensors/restart
+
+# Delete connector
+curl -X DELETE http://localhost:8083/connectors/mqtt-source-sensors
+
+# Re-create connector
+./setup-dev-env.sh test init_mqtt_connector
 ```
 
-### Environment Setup
+### Data Flow
+
+```
+MQTT Topic                    →  Kafka Topic
+─────────────────────────────────────────────
+sensors/temperature/{device}  →  sensors.temperature
+sensors/air_quality/{device}  →  sensors.air_quality
+sensors/motion/{device}       →  sensors.motion
+```
+
+---
+
+## 📈 Schema Registry
+
+### Register a Schema
 
 ```bash
-# Initial environment setup
-./scripts/setup-v2.sh
-
-# Or use the setup directory
-cd scripts/setup
-./bootstrap.sh
+# Register Avro schema for temperature sensor
+curl -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+  --data '{
+    "schema": "{\"type\":\"record\",\"name\":\"Temperature\",\"fields\":[{\"name\":\"device_id\",\"type\":\"string\"},{\"name\":\"temperature\",\"type\":\"double\"},{\"name\":\"humidity\",\"type\":\"double\"},{\"name\":\"timestamp\",\"type\":\"string\"}]}"
+  }' \
+  http://localhost:8081/subjects/sensors.temperature-value/versions
 ```
 
-## 📈 Monitoring
-
-The project includes comprehensive monitoring setup:
-
-- **Metrics**: Prometheus + Grafana dashboards (`monitoring/prometheus/`, `monitoring/grafana/`)
-- **Logging**: Centralized logging with ELK stack (`monitoring/elasticsearch/`)
-- **Tracing**: Distributed tracing with Jaeger (`monitoring/jaeger/`)
-- **Alerting**: Custom alerts for job failures and performance issues
-
-### Starting the Monitoring Stack
+### List Schemas
 
 ```bash
-cd monitoring
-docker-compose up -d
+curl http://localhost:8081/subjects
 ```
 
-Access points:
-- Grafana: http://localhost:3000
-- Prometheus: http://localhost:9090
-- Jaeger UI: http://localhost:16686
+## 🐳 Docker Services
+
+All services are defined in `infrastructure/docker/docker-compose.yml`:
+
+| Service | Image | Description |
+|---------|-------|-------------|
+| kafka | apache/kafka:4.0.0 | Kafka broker (KRaft mode) |
+| schema-registry | confluentinc/cp-schema-registry:7.6.0 | Schema management |
+| kafka-ui | provectuslabs/kafka-ui | Web UI for Kafka |
+| kafka-connect | apache/kafka:4.0.0 | Connector framework + MQTT plugin |
+| minio | minio/minio | S3-compatible storage |
+| postgres | postgres:16-alpine | Iceberg catalog |
+| mosquitto | eclipse-mosquitto:2.0 | MQTT broker |
+
+### Auto-configured Components
+
+When running `./setup-dev-env.sh start`:
+- **8 Kafka topics** created (sensors.*, events.*)
+- **5 MinIO buckets** created (smartstar, bronze, silver, gold, checkpoints)
+- **MQTT connector plugin** installed (Lenses Stream Reactor)
+
+When running `./setup-dev-env.sh complete`:
+- All of the above, plus:
+- **MQTT-Kafka connector** configured and running
 
 ## 🧪 Testing
 
-### Unit Tests
-
 ```bash
+# Run unit tests
 cd spark-apps
 sbt test
-```
 
-### Integration Tests
-
-```bash
-cd spark-apps
+# Run integration tests
 sbt "testOnly *IntegrationTest"
+
+# Generate test coverage
+sbt coverage test coverageReport
 ```
 
-### Test Infrastructure
+## 📚 Additional Resources
 
-The project includes comprehensive testing framework structure:
-
-- `tests/e2e/`: End-to-end testing infrastructure
-- `tests/integration/`: Integration test suites
-- `tests/performance/`: Performance and load testing
-- `tests/data-quality/`: Data quality validation tests
-
-*Note: Test implementations are currently being developed in their respective directories.*
-
-## 🛠️ Development Tools
-
-### CI/CD Pipelines (`tools/ci-cd/`)
-- GitHub Actions workflows
-- GitLab CI configurations  
-- Jenkins pipeline scripts
-
-### Code Quality (`tools/code-quality/`)
-- Linting and formatting configurations
-- Static analysis tools
-- Code coverage reporting
-
-### Local Development (`tools/local-dev/`)
-- Development environment setup
-- IDE configurations
-- Testing utilities
-
-## 📚 Documentation
-
-Detailed documentation available in the `docs/` directory:
-
-- [Architecture Overview](docs/architecture/)
-- [API Documentation](docs/api/)
+- [Architecture Documentation](docs/architecture/)
+- [API Reference](docs/api/)
 - [Deployment Guide](docs/deployment/)
 - [User Guides](docs/user-guides/)
+
+## 🔧 Troubleshooting
+
+### Port Already in Use
+
+```bash
+# Find and kill process on port
+sudo lsof -i :5432
+sudo kill -9 <PID>
+
+# Or disable system PostgreSQL
+sudo systemctl stop postgresql
+sudo systemctl disable postgresql
+```
+
+### Kafka Connect Unhealthy
+
+The `apache/kafka` image doesn't have `curl`, so health checks use bash TCP:
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8083'"]
+```
+
+### Reset Environment
+
+```bash
+./setup-dev-env.sh clean
+./setup-dev-env.sh start
+```
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## 🏷️ Version
 
-For issues and questions:
-
-1. Check the [documentation](docs/)
-2. Search existing [GitHub issues](../../issues)
-3. Create a new issue with detailed information
-
-## 🏷️ Version History
-
-- **1.0.0**: Initial release with ingestion, normalization, and analytics modules
-- Core Spark 3.5.0 support
-- Scala 2.13 compatibility
-- Docker and Kubernetes deployment support
+- **Platform**: SmartStar 2.0
+- **Spark**: 4.0.0
+- **Scala**: 2.13.16
+- **Kafka**: 4.0.0 (KRaft)
+- **Iceberg**: 1.10.0
