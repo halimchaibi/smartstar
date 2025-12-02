@@ -15,7 +15,14 @@ class S3StreamingJob extends EnvironmentAwareSparkJob with ConfigurableJob {
   override def config: AppConfig = ConfigurationFactory.forEnvironmentAndModule(detect(), Normalization)
 
   override def additionalSparkConfigs: Map[String, String] = Map(
-    "spark.sql.catalog.sensors" -> "org.apache.iceberg.spark.SparkCatalog"
+    // Iceberg JDBC Catalog configuration (PostgreSQL)
+    "spark.sql.catalog.sensors" -> "org.apache.iceberg.spark.SparkCatalog",
+    "spark.sql.catalog.sensors.type" -> "jdbc",
+    "spark.sql.catalog.sensors.uri" -> "jdbc:postgresql://smartstar-postgres:5432/smartstar",
+    "spark.sql.catalog.sensors.jdbc.user" -> "smartstar",
+    "spark.sql.catalog.sensors.jdbc.password" -> "smartstar",
+    "spark.sql.catalog.sensors.warehouse" -> "s3a://smartstar/development/silver/sensors/",
+    "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
   )
 
   private val rawSchema = StructType(Seq(
